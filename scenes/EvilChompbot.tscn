@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/evil_chompbot.gd" id="1_evil"]
+
+[node name="EvilChompbot" type="Area3D"]
+script = ExtResource("1_evil")

@@ -1,0 +1,30 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/orb.gd" id="1_orb"]
+
+[sub_resource type="QuadMesh" id="SphereMesh_orb"]
+size = Vector2(1.2, 0.9)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial_orb"]
+albedo_color = Color(0.6, 0.25, 1, 1)
+emission_enabled = true
+emission = Color(0.7, 0.3, 1, 1)
+emission_energy_multiplier = 3.0
+
+[sub_resource type="SphereShape3D" id="SphereShape_orb"]
+radius = 0.6
+
+[node name="Orb" type="Area3D"]
+script = ExtResource("1_orb")
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("SphereMesh_orb")
+material_override = SubResource("StandardMaterial_orb")
+
+[node name="Glow" type="OmniLight3D" parent="."]
+light_color = Color(0.7, 0.35, 1, 1)
+light_energy = 1.0
+omni_range = 5.0
+
+[node name="Shape" type="CollisionShape3D" parent="."]
+shape = SubResource("SphereShape_orb")

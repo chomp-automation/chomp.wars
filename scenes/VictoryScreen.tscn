@@ -1,0 +1,48 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/victory_screen.gd" id="1_victory"]
+
+[node name="VictoryScreen" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+script = ExtResource("1_victory")
+
+[node name="Background" type="ColorRect" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.10, 0.08, 0.22, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Menu" type="VBoxContainer" parent="Center"]
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="Center/Menu"]
+theme_override_font_sizes/font_size = 60
+horizontal_alignment = 1
+text = "Congratulations!"
+
+[node name="Message" type="Label" parent="Center/Menu"]
+horizontal_alignment = 1
+text = "You collected all 10 issues and reached the exit portal. The moon is yours."
+
+[node name="Stats" type="Label" parent="Center/Menu"]
+horizontal_alignment = 1
+text = ""
+
+[node name="PlayAgainButton" type="Button" parent="Center/Menu"]
+custom_minimum_size = Vector2(260, 52)
+layout_mode = 2
+text = "Play Again"
+
+[node name="MainMenuButton" type="Button" parent="Center/Menu"]
+custom_minimum_size = Vector2(260, 52)
+layout_mode = 2
+text = "Main Menu"
+
+[node name="QuitButton" type="Button" parent="Center/Menu"]
+custom_minimum_size = Vector2(260, 52)
+layout_mode = 2
+text = "Quit"

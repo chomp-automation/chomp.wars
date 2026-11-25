@@ -1,0 +1,28 @@
+; Engine configuration file.
+; It's best edited using Godot's editor. Manual changes are kept on reload when possible.
+
+config_version=5
+
+[application]
+
+config/name="Chomp Wars"
+config/description="Stranded on a mysterious moonscape. Collect the 10 magical issues and reach the exit portal."
+run/main_scene="res://scenes/MainMenu.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+
+[autoload]
+
+Game="*res://scripts/game_state.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=2
+textures/vram_compression/import_etc2_astc=true
