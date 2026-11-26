@@ -23,7 +23,10 @@ var _environment: Node
 var _player: Node3D
 var _phase := 0.0
 var _time := 0.0
-var _fire_cooldown := FIRE_COOLDOWN
+var _fire_cooldown: float
+var _fire_interval: float
+var _aggro_range: float
+var _home_range: float
 var _dead := false
 
 
@@ -32,7 +35,6 @@ func setup(home_position: Vector3, phase: float, environment: Node = null) -> vo
 	home = home_position
 	_phase = phase
 	_environment = environment
-	_fire_cooldown += fposmod(phase, 1.0)
 
 
 func _ready() -> void:
@@ -43,6 +45,12 @@ func _ready() -> void:
 	monitoring = false
 	monitorable = true
 	position = home
+	var difficulty := Game.difficulty_multiplier()
+	health = Game.scaled_enemy_health(MAX_HEALTH, difficulty)
+	_fire_interval = FIRE_COOLDOWN / difficulty
+	_fire_cooldown = (FIRE_COOLDOWN + fposmod(_phase, 1.0)) / difficulty
+	_aggro_range = AGGRO_RANGE * difficulty
+	_home_range = HOME_RANGE * difficulty
 	_build_visuals()
 
 
@@ -59,15 +67,19 @@ func _process(delta: float) -> void:
 	var target := centre + Vector2(cos(angle), sin(angle)) * DRIFT_RADIUS
 	if _player != null:
 		var player_point := Vector2(_player.global_position.x, _player.global_position.z)
-		if here.distance_to(player_point) <= AGGRO_RANGE and centre.distance_to(player_point) <= HOME_RANGE:
+		if here.distance_to(player_point) <= _aggro_range and centre.distance_to(player_point) <= _home_range:
 			var offset := here - player_point
 			var radial := offset.normalized() if offset.length_squared() > 0.01 else Vector2.RIGHT
 			var orbit := radial.rotated(0.55 if sin(_phase) >= 0.0 else -0.55)
-			target = centre + (player_point + orbit * ORBIT_DISTANCE - centre).limit_length(HOME_RANGE)
+			var orbit_distance := minf(ORBIT_DISTANCE, _aggro_range * 0.8)
+			target = centre + (player_point + orbit * orbit_distance - centre).limit_length(_home_range)
+			if _environment != null:
+				var edge: float = _environment.HALF_EXTENT
+				target = target.clamp(Vector2.ONE * -edge, Vector2.ONE * edge)
 			if _fire_cooldown <= 0.0:
 				var origin := global_position - Vector3.UP * 0.25
 				fired.emit(origin, (_player.global_position + Vector3.UP - origin).normalized())
-				_fire_cooldown = FIRE_COOLDOWN
+				_fire_cooldown = _fire_interval
 	var next := here.move_toward(target, FLIGHT_SPEED * delta)
 	var altitude := home.y
 	if _environment != null:

@@ -2,6 +2,10 @@ extends Node
 ## Global run state (chosen player, orbs collected, score), input bindings, music and sound effects.
 
 const TOTAL_ORBS := 10
+const DIFFICULTIES := ["Hard", "Medium", "Easy"]
+const DIFFICULTY_MULTIPLIERS := [1.0, 0.5, 0.2]
+const LEVEL_DIFFICULTY_GROWTH := 1.2
+const MAX_SCALED_HEALTH := 9007199254740991  # Largest integer the HUD can display exactly.
 const CHARACTERS := {"chomp": "Chomp", "mrs_chomp": "Mrs. Chomp"}
 const CYAN := Color(0.2, 0.95, 1.0)
 const PINK := Color(1.0, 0.36, 0.72)
@@ -36,6 +40,8 @@ var font_semibold: FontFile
 
 var selected_character := "chomp"
 var selected_music := 0
+var selected_difficulty := 0
+var level := 1
 var orbs_collected := 0
 var enemies_destroyed := 0
 var score := 0
@@ -78,10 +84,23 @@ func _load_font(path: String) -> FontFile:
 
 
 func reset_run() -> void:
-	orbs_collected = 0
+	level = 1
 	enemies_destroyed = 0
 	score = 0
+	reset_level()
+
+
+func reset_level() -> void:
+	orbs_collected = 0
 	laser_hits = 0
+
+
+func difficulty_multiplier() -> float:
+	return DIFFICULTY_MULTIPLIERS[selected_difficulty] * pow(LEVEL_DIFFICULTY_GROWTH, level - 1)
+
+
+func scaled_enemy_health(base_health: int, multiplier: float) -> int:
+	return maxi(1, roundi(minf(base_health * multiplier, float(MAX_SCALED_HEALTH))))
 
 
 ## Energy left as a fraction from 1.0 (full) down to 0.0 (empty).
@@ -234,6 +253,7 @@ const KEY_BINDINGS := {
 	"jump": KEY_SHIFT,
 	"interact": KEY_E,
 	"toggle_view": KEY_V,
+	"sprint": KEY_CTRL,
 	"pause": KEY_ESCAPE,
 }
 const JOY_BUTTON_BINDINGS := {
@@ -244,6 +264,7 @@ const JOY_BUTTON_BINDINGS := {
 	"fire": [JOY_BUTTON_RIGHT_SHOULDER],  # R1 / RB
 	"jump": [JOY_BUTTON_B],  # right
 	"interact": [JOY_BUTTON_A],  # bottom
+	"sprint": [JOY_BUTTON_A],  # Cross on PlayStation
 	"toggle_view": [JOY_BUTTON_X],  # left
 	"pause": [JOY_BUTTON_START],
 	# Godot 4.3's built-in ui_accept has no controller button. The D-pad and left stick

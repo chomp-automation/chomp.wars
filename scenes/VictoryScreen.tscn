@@ -26,11 +26,16 @@ text = "Congratulations!"
 
 [node name="Message" type="Label" parent="Center/Menu"]
 horizontal_alignment = 1
-text = "You collected all 10 issues and reached the exit portal. The moon is yours."
+text = "You cleared the portal. Enemy difficulty increases by 20% in the next level."
 
 [node name="Stats" type="Label" parent="Center/Menu"]
 horizontal_alignment = 1
 text = ""
+
+[node name="NextLevelButton" type="Button" parent="Center/Menu"]
+custom_minimum_size = Vector2(260, 52)
+layout_mode = 2
+text = "Next Level"
 
 [node name="PlayAgainButton" type="Button" parent="Center/Menu"]
 custom_minimum_size = Vector2(260, 52)

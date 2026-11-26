@@ -30,6 +30,11 @@ var _player: CharacterBody3D
 var _game_state: Node
 var _cover: StaticBody3D
 var _player_before_cover: Vector3
+var _level_one_score: int
+var _rain_centre: Vector3
+var _rain_seen := {}
+var _rain_waves := 0
+var _rain_ticks := 0
 
 
 func _initialize() -> void:
@@ -47,6 +52,10 @@ func _initialize() -> void:
 func _physics_process(_delta: float) -> bool:
 	if _wait > 0:
 		_wait -= 1
+		return false
+	# Godot installs the next scene at the end of a frame. Several physics ticks
+	# can run while current_scene is null, especially after loading the terrain.
+	if current_scene == null:
 		return false
 	match _step:
 		0:
@@ -214,15 +223,53 @@ func _physics_process(_delta: float) -> bool:
 			var scene := current_scene
 			_check(scene != null and scene.scene_file_path == "res://scenes/VictoryScreen.tscn",
 				"reaching the portal opens the victory screen")
-			_check(_focus_name() == "PlayAgainButton", "victory screen focuses Play Again for controllers")
-			change_scene_to_file("res://scenes/MainMenu.tscn")
+			_check(_focus_name() == "NextLevelButton", "victory screen focuses the next level for controllers")
+			_level_one_score = _game_state.score
+			scene.get_node("Center/Menu/NextLevelButton").pressed.emit()
+			_wait = 4
+			_step = 70
+		70:
+			_refresh_game_refs()
+			_freeze_enemies()
+			_check(_game_state.level == 2 and _game.get_node("Hud/CharacterLabel").text.begins_with("Level 2"),
+				"continuing from victory enters level two")
+			_check(_game_state.orbs_collected == 0 and _orb_count() == 10 and not _env.portal_active,
+				"the next level has fresh issues and a locked portal")
+			_check(_game_state.score == _level_one_score and _game_state.energy_fraction() == 1.0,
+				"the next level carries score and refills energy")
+			_check_enemy_settings(12, 360, 1.2)
+			_game._boss.health = 1
+			_game._boss.hit()
+			_env.portal_entered.emit(_player)
+			_wait = 4
+			_step = 71
+		71:
+			current_scene.get_node("Center/Menu/NextLevelButton").pressed.emit()
+			_wait = 4
+			_step = 72
+		72:
+			_refresh_game_refs()
+			_freeze_enemies()
+			_check(_game_state.level == 3, "the same portal and continue flow reaches level three")
+			_check_enemy_settings(14, 432, 1.44)
+			_game._go_to_main_menu()
 			_wait = 4
 			_step = 8
 		8:
 			_check(current_scene != null and current_scene.scene_file_path == "res://scenes/MainMenu.tscn",
-				"victory screen can return to the main menu")
+				"the main menu is available after continuing")
+			var difficulty: Button = current_scene.find_child("Difficulty", true, false)
+			_check(difficulty.text.ends_with("Hard"), "Hard is selected by default")
+			difficulty.pressed.emit()
+			_check(difficulty.text.ends_with("Medium"), "the main menu offers Medium")
+			_check_selected_difficulty(5, 150, 0.5)
+			difficulty.pressed.emit()
+			_check(difficulty.text.ends_with("Easy"), "the main menu offers Easy")
+			_check_selected_difficulty(2, 60, 0.2)
+			difficulty.pressed.emit()
+			_check(difficulty.text.ends_with("Hard"), "difficulty cycles back to Hard")
 			_game_state.selected_character = "mrs_chomp"
-			change_scene_to_file("res://scenes/MainGame.tscn")
+			current_scene.get("_start_button").pressed.emit()
 			_wait = 4
 			_step = 9
 		9:
@@ -230,6 +277,7 @@ func _physics_process(_delta: float) -> bool:
 			_freeze_enemies()
 			_remove_enemy_lasers()
 			_check(_game_state.orbs_collected == 0, "a new run starts with 0 orbs")
+			_check(_game_state.level == 1 and _game_state.score == 0, "Start begins a fresh run at level one")
 			_check(_orb_count() == 10, "a restarted run places 10 orbs again")
 			_check(absf(_model().scale.x - 0.92) < 0.01, "Mrs. Chomp uses the slimmer model scale")
 			_check(_count_pink(_model()) > 0, "Mrs. Chomp has pink recoloured parts")
@@ -249,7 +297,7 @@ func _physics_process(_delta: float) -> bool:
 			_check(_laser_color_matches(_game_state.laser_color("mrs_chomp")), "Mrs. Chomp fires pink lasers")
 			_player.fire()
 			_check(_laser_count() == 1, "the fire cooldown stops a second laser at once")
-			_wait = 110  # longer than a laser lives (1.6 s at 60 ticks per second)
+			_wait = 140
 			_step = 100
 		100:
 			Input.action_press("fire")
@@ -259,36 +307,51 @@ func _physics_process(_delta: float) -> bool:
 			_check(_laser_count() == 0, "holding fire charges without shooting")
 			_player.call("_update_charge", 12.0)
 			_check(is_equal_approx(_player.charge_time, 10.0), "charge caps at ten seconds")
+			_rain_centre = _player.global_position
 			Input.action_release("fire")
 			_wait = 1
 			_step = 102
 		102:
-			_check(_laser_count() == 48, "full charge releases laser rain")
-			var rain_reach := 0.0
-			var rain_starts_above_ground := true
-			var rain_falls_down := true
-			for laser in get_nodes_in_group("laser"):
-				var offset: Vector3 = laser.global_position - _player.global_position
-				rain_reach = maxf(rain_reach, Vector2(offset.x, offset.z).length())
-				var ground: float = _env.get_height_at(laser.position.x, laser.position.z)
-				rain_starts_above_ground = rain_starts_above_ground and laser.position.y > ground
-				rain_falls_down = rain_falls_down and laser._direction == Vector3.DOWN
-				laser.free()
-			_check(absf(rain_reach - 72.0) < 0.001, "rain reaches four times its previous radius")
-			_check(rain_starts_above_ground and rain_falls_down, "rain falls downward from above local terrain")
-			for sample in [[0.0, 1], [0.249, 1], [0.25, 1], [0.499, 1], [0.5, 5], [0.749, 5], [0.75, 24], [0.999, 24]]:
-				_game.call("_on_player_fired", _player.global_position + Vector3.UP, Vector3.FORWARD, "chomp", sample[0])
-				_check(_laser_count() == sample[1], "charge %.3f selects expected attack" % sample[0])
+			_record_rain_wave()
+			_check(_rain_waves == 1, "full charge releases the first laser rain wave")
+			_game.toggle_pause()
+			_wait = 35
+			_step = 103
+		103:
+			_record_rain_wave()
+			_check(_rain_waves == 1, "laser rain waits while the game is paused")
+			_game.toggle_pause()
+			_player.respawn(_rain_centre + Vector3.RIGHT * 5.0)
+			_step = 104
+		104:
+			_record_rain_wave()
+			_rain_ticks += 1
+			if _rain_ticks >= 115:
+				_check(_rain_waves == 4 and _rain_seen.size() == 288, "laser rain fires exactly four waves and 288 beams")
 				for laser in get_nodes_in_group("laser"):
-					if sample[0] >= 0.75:
-						_check(is_equal_approx(laser.max_distance, 13.5), "circle stops at fifteen Chomp widths")
-						var start: Vector3 = laser.global_position
-						laser.call("_physics_process", 0.4)
-						_check(laser.is_queued_for_deletion(), "circle expires at its distance limit")
-						_check(laser.global_position.distance_to(start) <= 13.501, "circle never travels beyond range")
+					laser.free()
+				_step = 105
+		105:
+			var clear_origin := Vector3(0, 40, 0)
+			var previous_origin := _player.global_position
+			_player.respawn(clear_origin - Vector3.UP)
+			for sample in [[0.0, 1], [0.249, 1], [0.25, 1], [0.499, 1], [0.5, 5], [0.749, 5], [0.75, 24], [0.999, 24]]:
+				_game.call("_on_player_fired", clear_origin, Vector3.FORWARD, "chomp", sample[0])
+				_check(_laser_count() == sample[1], "charge %.3f selects expected attack" % sample[0])
+				var active_at_90 := true
+				var expires_at_100 := true
+				for laser in get_nodes_in_group("laser"):
+					laser._physics_process(2.0)
+					active_at_90 = active_at_90 and not laser.is_queued_for_deletion()
+					laser._physics_process(0.5)
+					var distance: float = laser.global_position.distance_to(clear_origin)
+					expires_at_100 = expires_at_100 and laser.is_queued_for_deletion() and absf(distance - 100.0) < 0.001
 					if sample[0] == 0.25:
 						_check(laser.scale.x > 2.0, "second stage creates a big beam")
 					laser.free()
+				_check(active_at_90 and expires_at_100,
+					"unobstructed shots at charge %.3f travel half the map width" % sample[0])
+			_player.respawn(previous_origin)
 			for sample in [[2.5, "Big laser beam"], [5.0, "Multiple lasers"], [7.5, "Laser circle"], [9.96, "Laser circle"], [10.0, "Laser rain"]]:
 				_player.charge_time = sample[0]
 				_game.call("_process", 0.0)
@@ -315,8 +378,8 @@ func _physics_process(_delta: float) -> bool:
 			_player.call("_physics_process", 0.1)
 			_check(is_equal_approx(Vector2(_player.velocity.x, _player.velocity.z).length(), 6.0),
 				"keyboard and D-pad keep full movement speed while turning")
-			_check(is_equal_approx(yaw_before - _player.rotation.y, 0.26),
-				"keyboard and D-pad keep full turn speed while moving")
+			_check(is_equal_approx(yaw_before - _player.rotation.y, 0.182),
+				"keyboard and D-pad turn 30 percent more slowly while moving")
 			Input.action_release("move_forward")
 			Input.action_release("move_right")
 			yaw_before = _player.rotation.y
@@ -327,7 +390,7 @@ func _physics_process(_delta: float) -> bool:
 			Input.action_press("aim_lock")
 			_player.call("_physics_process", 0.1)
 			_check(is_zero_approx(_player.velocity.x) and is_zero_approx(_player.velocity.z), "L2 holds player still")
-			_check(absf(_player.rotation.y - yaw_before) > 0.28, "L2 left-stick aiming is faster")
+			_check(is_equal_approx(yaw_before - _player.rotation.y, 0.2002), "L2 left-stick aiming remains twice as fast")
 			Input.action_release("aim_lock")
 			Input.action_release("stick_right")
 			Input.action_press("sniper")
@@ -337,7 +400,7 @@ func _physics_process(_delta: float) -> bool:
 			var zoom_fov: float = _player.get_node("CameraPivot/Camera").fov
 			var magnification := tan(deg_to_rad(75.0) / 2.0) / tan(deg_to_rad(zoom_fov) / 2.0)
 			_check(is_equal_approx(magnification, 5.0), "R2 gives true 5x perspective magnification")
-			_check(is_equal_approx(yaw_before - _player.rotation.y, 0.0286), "sniper aiming is five times finer")
+			_check(is_equal_approx(yaw_before - _player.rotation.y, 0.02002), "sniper aiming is five times finer")
 			_check(is_zero_approx(_player.charge_time), "R2 does not charge fire")
 			Input.action_release("sniper")
 			Input.action_release("look_right")
@@ -347,7 +410,7 @@ func _physics_process(_delta: float) -> bool:
 			Input.action_press("aim_up")
 			_player.call("_physics_process", 0.1)
 			Input.action_release("aim_up")
-			_check(is_equal_approx(_player.get_node("CameraPivot").rotation.x, 0.033), "keyboard aim adjusts slowly with time")
+			_check(is_equal_approx(_player.get_node("CameraPivot").rotation.x, 0.0231), "keyboard pitch is 30 percent slower")
 			_player.call("_pitch_camera", 100.0)
 			_check(_player.get_node("CameraPivot").rotation.x <= deg_to_rad(60.0) + 0.001, "aim is limited vertically")
 			_player.get_node("CameraPivot").rotation.x = 0.0
@@ -450,8 +513,8 @@ func _physics_process(_delta: float) -> bool:
 		16:
 			_joy_axis(JOY_AXIS_RIGHT_X, 0.0)
 			_joy_axis(JOY_AXIS_RIGHT_Y, 0.0)
-			_check(_player.rotation.y < _start_yaw - 0.3, "right stick turns the view right")
-			_check(_player.get_node("CameraPivot").rotation.x > _start_pitch + 0.2, "right stick tilts the view up")
+			_check(_player.rotation.y < _start_yaw - 0.20, "right stick turns the view right")
+			_check(_player.get_node("CameraPivot").rotation.x > _start_pitch + 0.14, "right stick tilts the view up")
 			_wait = 10
 			_step = 17
 		17:
@@ -469,27 +532,29 @@ func _physics_process(_delta: float) -> bool:
 		19:
 			_joy_button(JOY_BUTTON_B, false)
 			_check(_player.velocity.y > 0.0, "right face button jumps")
-			_lasers_before = _laser_count()
+			_player.fired.connect(func(_origin: Vector3, _direction: Vector3, _character: String, _charge: float) -> void:
+				_controller_shots += 1)
 			_joy_button(JOY_BUTTON_RIGHT_SHOULDER, true)
 			_wait = 2
 			_step = 190
 		190:
 			_joy_button(JOY_BUTTON_RIGHT_SHOULDER, false)
+			_wait = 2
 			_step = 194
 		194:
-			_check(_laser_count() > _lasers_before, "R1 shoulder button fires on release")
+			_check(_controller_shots == 1, "R1 shoulder button fires on release")
 			_wait = 30  # let the fire cooldown pass
 			_step = 191
 		191:
-			_lasers_before = _laser_count()
 			_joy_button(JOY_BUTTON_RIGHT_SHOULDER, true)  # R1 shoulder button
 			_wait = 2
 			_step = 192
 		192:
 			_joy_button(JOY_BUTTON_RIGHT_SHOULDER, false)
+			_wait = 2
 			_step = 195
 		195:
-			_check(_laser_count() > _lasers_before, "R1 shoulder button fires on release")
+			_check(_controller_shots == 2, "R1 can fire again after the cooldown")
 			_view_before = _player.third_person
 			_joy_button(JOY_BUTTON_X, true)  # left face button
 			_wait = 2
@@ -499,6 +564,23 @@ func _physics_process(_delta: float) -> bool:
 			_check(_player.third_person != _view_before, "left face button switches the view")
 			_player.call("_set_third_person", _view_before)
 			_check(_button_for("interact") == JOY_BUTTON_A, "bottom face button reads signposts")
+			_check(_key_for("sprint") == KEY_CTRL and _button_for("sprint") == JOY_BUTTON_A,
+				"Ctrl and the PlayStation Cross button are bound to sprint")
+			_player.respawn(Vector3(0, 30, 0))
+			_joy_axis(JOY_AXIS_LEFT_Y, -1.0)
+			_joy_button(JOY_BUTTON_A, true)
+			_wait = 2
+			_step = 196
+		196:
+			_check(is_equal_approx(Vector2(_player.velocity.x, _player.velocity.z).length(), 12.0),
+				"holding Cross doubles movement speed")
+			_joy_button(JOY_BUTTON_A, false)
+			_wait = 2
+			_step = 197
+		197:
+			_check(is_equal_approx(Vector2(_player.velocity.x, _player.velocity.z).length(), 6.0),
+				"releasing Cross restores walking speed")
+			_joy_axis(JOY_AXIS_LEFT_Y, 0.0)
 			_wait = 2
 			_step = 20
 		20:
@@ -572,11 +654,6 @@ func _physics_process(_delta: float) -> bool:
 			Engine.time_scale = 1.0
 			_game.set("_game_speed", 1.0)
 			_game_state.set_music_speed(1.0)
-			var player_node: Node = _game.get_node("Player")
-			var flipped_before: bool = player_node.get("_flipped")
-			player_node.call("chomp_greeting")
-			_check(player_node.get("_flipped") != flipped_before,
-				"the bottom button with no sign turns the character round")
 			_check(_moonbase_exists(), "a domed moonbase is built on the moon")
 			var base: Node = _env.get("_props").find_child("MoonBase", true, false)
 			_check(base != null and base.get_node("TrappedChomps").get_child_count() == 10,
@@ -600,7 +677,7 @@ func _physics_process(_delta: float) -> bool:
 var _start_yaw := 0.0
 var _start_pitch := 0.0
 var _yaw_after_release := 0.0
-var _lasers_before := 0
+var _controller_shots := 0
 var _view_before := true
 
 
@@ -675,6 +752,85 @@ func _freeze_enemies() -> void:
 		node.set_process(false)
 
 
+func _check_selected_difficulty(normal_health: int, boss_health: int, multiplier: float) -> void:
+	_game_state.reset_run()
+	_game = load("res://scenes/MainGame.tscn").instantiate()
+	root.add_child(_game)
+	_player = _game.get_node("Player")
+	_check_enemy_settings(normal_health, boss_health, multiplier)
+	_game.free()
+
+
+func _check_enemy_settings(normal_health: int, boss_health: int, multiplier: float) -> void:
+	var drone := _first_drone()
+	var bot := _first_bot()
+	_check(drone.health == normal_health and bot.health == normal_health,
+		"%.2fx difficulty scales UFO and chompbot health" % multiplier)
+	_check(is_equal_approx(drone._aggro_range, 26.0 * multiplier)
+		and is_equal_approx(drone._home_range, 36.0 * multiplier)
+		and is_equal_approx(bot._engagement_range, 24.0 * multiplier),
+		"%.2fx difficulty scales enemy pursuit and engagement ranges" % multiplier)
+	var drone_home: Vector3 = drone.home
+	drone._fire_cooldown = 0.0
+	_player.respawn(drone_home + Vector3.RIGHT * (26.0 * multiplier + 0.5))
+	drone._process(0.0)
+	_check(_live_enemy_laser_count() == 0, "UFO ignores Chomp just outside the scaled range")
+	_player.respawn(drone_home + Vector3.RIGHT * (26.0 * multiplier - 0.5))
+	drone._process(0.0)
+	_check(_live_enemy_laser_count() == 1 and is_equal_approx(drone._fire_cooldown, 1.4 / multiplier),
+		"UFO fires within the scaled range and uses the scaled interval")
+	_remove_enemy_lasers()
+	bot._fire_cooldown = 0.0
+	var bot_position: Vector3 = bot.position
+	_player.respawn(bot_position + Vector3.RIGHT * (24.0 * multiplier + 0.5))
+	bot._process(0.0)
+	_check(_live_enemy_laser_count() == 0, "chompbot ignores Chomp just outside the scaled range")
+	_player.respawn(bot_position + Vector3.RIGHT * (24.0 * multiplier - 0.5))
+	bot._process(0.0)
+	_check(_live_enemy_laser_count() == 1 and is_equal_approx(bot._fire_cooldown, 1.1 / multiplier),
+		"chompbot fires within the scaled range and uses the scaled interval")
+	_remove_enemy_lasers()
+	_collect_all_orbs()
+	var boss = _game._boss
+	boss.set_process(false)
+	_check(boss.health == boss_health and _game.boss_health_bar.max_value == boss_health
+		and boss._health_label.text.ends_with("/ %d" % boss_health),
+		"%.2fx difficulty scales boss health in both displays" % multiplier)
+	boss._process(2.0)
+	_check(_live_enemy_laser_count() == 3 and is_equal_approx(boss._cooldown, 1.35 / multiplier),
+		"%.2fx difficulty scales boss firing rate" % multiplier)
+	_remove_enemy_lasers()
+
+
+func _record_rain_wave() -> void:
+	var beam_count := 0
+	var colors := {}
+	var radius := 0.0
+	var falling_from_above := true
+	var same_range := true
+	for laser in get_nodes_in_group("laser"):
+		var id: int = laser.get_instance_id()
+		if _rain_seen.has(id):
+			continue
+		_rain_seen[id] = true
+		beam_count += 1
+		var offset: Vector3 = laser.global_position - _rain_centre
+		radius = maxf(radius, Vector2(offset.x, offset.z).length())
+		var ground: float = _env.get_height_at(laser.position.x, laser.position.z)
+		falling_from_above = falling_from_above and laser.position.y > ground and laser._direction == Vector3.DOWN
+		colors[laser.get_node("Bolt").material_override.albedo_color] = true
+		same_range = same_range and laser.max_distance == 100.0
+	if beam_count == 0:
+		return
+	_rain_waves += 1
+	_check(beam_count == 72 and absf(radius - 72.0) < 0.001,
+		"rain wave %d contains 72 beams across the original radius" % _rain_waves)
+	_check(falling_from_above and colors.has(Color.RED) and colors.has(Color.WHITE)
+		and colors.has(Color(0.18, 0.45, 1.0)) and colors.size() == 3,
+		"rain wave %d contains red, white and blue beams falling from above" % _rain_waves)
+	_check(same_range, "rain wave %d has the same range limit as other shots" % _rain_waves)
+
+
 func _damage_without_destroying(enemy: Area3D, hits: int) -> bool:
 	for i in hits:
 		if enemy.hit():
@@ -742,9 +898,10 @@ func _check_projectile_cover(drone: Area3D) -> void:
 	_check(rain.is_queued_for_deletion() and absf(rain.position.y - ground.y) < 0.5,
 		"a downward beam stops at the real heightmap terrain")
 	var rocks: Array = _env.get("_rocks")
-	_game.call("_spawn_laser", rocks[0].global_position + Vector3.UP * 4.0, Vector3.DOWN, Color.CYAN, 0.0)
+	var rock: StaticBody3D = rocks[0]
+	_game.call("_spawn_laser", rock.global_position + Vector3.UP * 4.0, Vector3.DOWN, Color.CYAN, 0.0)
 	get_nodes_in_group("laser").back()._physics_process(0.2)
-	_check(rocks.size() == 23, "a laser impact still destroys a moon rock")
+	_check(not rocks.has(rock), "a laser impact still destroys the moon rock it hits")
 	var base_target: StaticBody3D = _env.get("_base_target")
 	_game.call("_spawn_laser", base_target.global_position + Vector3.LEFT * 4.0, Vector3.RIGHT, Color.CYAN, 0.0)
 	get_nodes_in_group("laser").back()._physics_process(0.2)
@@ -852,7 +1009,7 @@ func _key_for(action: String) -> int:
 ## built-in menu actions accept the D-pad and A button.
 func _check_controller_bindings() -> void:
 	for action in ["move_forward", "move_back", "move_left", "move_right", "jump", "fire",
-			"interact", "toggle_view", "pause", "look_left", "look_right", "look_up", "look_down"]:
+			"interact", "sprint", "toggle_view", "pause", "look_left", "look_right", "look_up", "look_down"]:
 		_check(_has_joy_event(action), "controller is bound to " + action)
 	_check(_has_joy_event("ui_accept") and _has_joy_event("ui_down"), "menus accept the D-pad and A button")
 
