@@ -61,6 +61,7 @@ The game opens at 1920 x 1080 with 2x anti-aliasing. On a smaller screen, resize
 | Up / Down | Slowly aim up / down; release to keep that angle |
 | Space | Hold to charge up to ten seconds; release to deploy the attack shown in the charge bar. Cyan for Chomp, pink for Mrs. Chomp |
 | Shift | Jump |
+| Ctrl (hold) | Sprint at twice walking speed |
 | Right mouse button, drag | Look around |
 | E | Read a signpost (stand near one) |
 | V | Switch between third-person (default, the character is visible) and first-person |
@@ -71,7 +72,7 @@ Look-around uses right-button drag so that the mouse cursor stays free to click 
 
 ### Controller
 
-Keyboard and D-pad movement keep their full forward/backward speed while turning. Keyboard, mouse and controller aiming are 45% slower for finer control.
+Keyboard and D-pad movement keep their full forward/backward speed while turning. Keyboard, mouse and controller aiming are 30% slower than before for finer control.
 
 A wired or Bluetooth controller works alongside the keyboard. Pair it with your system first (on Ubuntu: **Settings > Bluetooth**), then start the game. Godot recognises common controllers such as Xbox, PlayStation and Switch Pro pads. The face buttons below are named by position (top, right, bottom, left), not by the letter or symbol printed on them, so the same layout applies to every controller.
 
@@ -85,20 +86,18 @@ A wired or Bluetooth controller works alongside the keyboard. Pair it with your 
 | R1 / RB / right shoulder button | Hold to charge, release to fire |
 | Right face button | Jump |
 | Left face button | Switch between third-person and first-person |
-| Bottom face button | Read a signpost. With no signpost nearby, turn to face the camera and chomp |
+| Bottom face button (Cross on PlayStation) | Hold while moving to sprint at twice walking speed. Press near a signpost to read it |
 | Start / Options / + | Pause and resume |
 | D-pad or left stick, then bottom face button | Choose a button on the start, pause and victory screens |
 
 ## How to play
 
-1. Pick **Chomp** or **Mrs. Chomp** on the start screen (both turn slowly and chomp in their previews). Press **Music** to choose the background music: Starlight (the default), Extra Terrestrial or Hard Rock. Then press **Start**.
+1. Pick **Chomp** or **Mrs. Chomp** on the start screen. Use **Music** to choose a track and **Difficulty** to cycle through Hard (the default), Medium and Easy. Then press **Start**.
 2. Walk into the glowing purple backlog cards to collect issues. Each card has an open-issue symbol, title lines and a BACKLOG label. The north-up minimap at the top right shows your heading (white arrow), remaining issues (purple cards), enemies (red diamonds) and the portal (grey ring, mint when open). Your score is at the top left, with the issue counter to its right. Each issue you collect refills your energy to 100%.
-3. UFO saucers pursue, circle and fire when Chomp comes within 26 metres. Evil chompbots strafe and fire when Chomp gets close. Both take **10 laser hits** to defeat and score **100 points** per kill. Aim with the crosshair and hold **Space** to charge, then release to fire.
+3. On Hard at level 1, UFO saucers pursue, circle and fire within 26 metres, chompbots engage within 24 metres, and both take **10 hits** to defeat. Medium starts at 50% of Hard. Easy starts at 20%. These factors scale enemy health, shots per second, and UFO and chompbot engagement ranges. Health rounds to the nearest hitpoint.
 4. Solid terrain and obstacles block both sides’ lasers. Each red laser hit takes a third of your cyan **Chomp Energy** bar. Three hits end the run. Water sends you back to the starting pad. The timer sits next to **Pause**. After two minutes, both gameplay and music speed up.
-5. Collecting all 10 issues summons a giant Alien Overlord with **300 hitpoints**. It strafes after emerging and cycles through a three-shot aimed spread, a twelve-shot radial barrage and a four-shot tracking burst. It attacks more often at half health and below. A health bar tracks its remaining health, every hit triggers an alien yell, and Hard Rock plays during the fight. The portal stays locked until the alien is defeated. Walk through the glowing portal to win.
-6. On the victory screen, choose **Play Again**, **Main Menu** or **Quit**. It shows your issues, enemies destroyed and score.
-
-Press the **bottom face button** (or **E**) with no signpost nearby and the character turns half a circle to face the camera, opening its mouth wide and snapping it shut with a chomp sound. Press it again to turn back.
+5. Collecting all 10 issues summons the Alien Overlord with **300 hitpoints** on Hard at level 1. It strafes and cycles through a three-shot spread, a twelve-shot radial barrage and a four-shot tracking burst. Its attacks speed up at half health. Defeat it and walk through the glowing portal to clear the level.
+6. Choose **Start Level** on the completion screen to continue. Each level resets the moonscape, issues and energy, carries over your score, and multiplies enemy difficulty by 1.2. There is no final level. **Play Again** begins a new run at level 1.
 
 The reflective dome moonbase has an airlock, solar panels and an antenna. Ten tiny Chomps are trapped inside. Aim at the glowing red target on the base and hit it ten times to release them. Moon rocks break when hit by a laser. The dome and airlock are solid, so walk round them.
 
@@ -132,7 +131,7 @@ Run the smoke test from the repository root:
 godot --headless --path . -s res://tests/smoke_test.gd
 ```
 
-The smoke test drives the real game scenes through movement, keyboard and controller input, weapon charges, combat, issue collection, the locked portal, victory and restart. It checks enemy health and attack cadence, UFO pursuit, the 72-metre laser rain radius, and projectile impacts against cover and the heightmap. It prints `PASS` or `FAIL` for each check and exits with code 0 when all pass. The [combat acceptance checklist](tests/combat_uat.md) covers the same changes in a playable run.
+The smoke test drives the real game scenes through movement, keyboard and controller input, weapon charges, combat, issue collection, the locked portal, progression and restart. It checks sprinting, aiming, difficulty scaling, rain waves and colours, shot range, and projectile impacts against cover and the heightmap. It prints `PASS` or `FAIL` for each check and exits with code 0 when all pass. The [combat acceptance checklist](tests/combat_uat.md) covers the same changes in a playable run.
 
 The headless run may print `Parameter "m" is null` messages after a scene is removed. These come from Godot's headless renderer and do not affect the result. The test exit code is the thing to check.
 
@@ -220,7 +219,7 @@ Pass `--skip-tests` for fast iterative redeployment.
 - Built with [Godot Engine](https://godotengine.org/) 4.3, which is MIT-licensed. Include Godot's licence notice with any distributed build.
 - The mascot model, logo and audio were made for Chomp.
 
-The charge bar has four marked quarters and shows the percentage and attack name. Charge takes ten real-time seconds, even after the game speeds up. Release below 25% for a single laser, at 25–49% for a big beam, at 50–74% for five lasers, or at 75–99% for a circle of 24 lasers limited to fifteen Chomp widths (13.5 metres) from Chomp. At 100%, release for 48 downward beams spread across a 72-metre radius, four times the previous reach. The bar and companion lights symbolize adversarial agents helping Chomp; this is an in-game metaphor. Pausing or respawning cancels a pending charge.
+The charge bar has four marked quarters and shows the percentage and attack name. Charge takes ten real-time seconds, even after the game speeds up. Release below 25% for a single laser, at 25–49% for a big beam, at 50–74% for five lasers, or at 75–99% for a circle of 24 lasers. At 100%, 288 red, white and blue beams descend in four waves within 72 metres of the position where you released the shot. Every player beam can travel up to 100 metres, half the map width, and stops on impact. Pausing or respawning cancels a pending charge.
 
 ## Copyright and licence
 

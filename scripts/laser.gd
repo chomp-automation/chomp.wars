@@ -2,9 +2,10 @@ extends "res://scripts/projectile.gd"
 ## A laser bolt fired by the player. It stops on enemies and solid cover or when it reaches its range limit.
 
 const SPEED := 45.0
-const LIFETIME := 1.6
+const EnvironmentLayout := preload("res://scripts/environment.gd")
+const MAX_DISTANCE := EnvironmentLayout.WORLD_EDGE
 
-var max_distance := SPEED * LIFETIME
+var max_distance := MAX_DISTANCE
 var _distance := 0.0
 var _direction := Vector3.FORWARD
 

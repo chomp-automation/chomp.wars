@@ -1,5 +1,5 @@
 extends Node3D
-## Runs one playthrough: spawns the orbs, drones and evil chompbots, drives the HUD, the energy
+## Runs one level: spawns the orbs, drones and evil chompbots, drives the HUD, the energy
 ## bar, the game timer, the pause and game-over menus, increases game speed after two minutes,
 ## handles water resets, enemy laser damage, falls, signposts and the exit portal.
 
@@ -15,6 +15,11 @@ const VICTORY_SCENE := "res://scenes/VictoryScreen.tscn"
 const FALL_LIMIT := -15.0
 const ESCALATION_TIME := 120.0
 const ESCALATED_SPEED := 1.3
+const RAIN_RADIUS := 72.0
+const RAIN_WAVES := 4
+const RAIN_BEAMS_PER_WAVE := 72
+const RAIN_WAVE_INTERVAL := 0.45
+const RAIN_COLORS := [Color.RED, Color.WHITE, Color(0.18, 0.45, 1.0)]
 
 @onready var environment = $Environment
 @onready var player = $Player
@@ -45,7 +50,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	environment.process_mode = Node.PROCESS_MODE_PAUSABLE
 	player.process_mode = Node.PROCESS_MODE_PAUSABLE
-	Game.reset_run()
+	if Game.level == 1:
+		Game.reset_run()
+	else:
+		Game.reset_level()
 	Game.restore_music()
 	player.apply_character(Game.selected_character)
 	player.respawn(environment.start_position)
@@ -69,7 +77,8 @@ func _ready() -> void:
 	$Hud/GameOverMenu/Center/Menu/GameOverMenuButton.pressed.connect(_go_to_main_menu)
 	game_over_menu.visible = false
 
-	character_label.text = "Playing as " + Game.CHARACTERS[Game.selected_character]
+	character_label.text = "Level %d  |  %s  |  Playing as %s" % [
+		Game.level, Game.DIFFICULTIES[Game.selected_difficulty], Game.CHARACTERS[Game.selected_character]]
 	boss_health_bar = ProgressBar.new()
 	boss_health_bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	boss_health_bar.position = Vector2(-300, 24)
@@ -146,14 +155,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("pause", false):
 		toggle_pause()
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed("interact", false):
+	elif not get_tree().paused and not _finished and event.is_action_pressed("interact", false):
 		var text: String = environment.nearby_sign_text()
 		if text != "":
 			show_status(text, 6.0)
-			get_viewport().set_input_as_handled()
-		elif not _game_over and not _finished:
-			# No sign to read: the bottom button makes the character turn round and chomp.
-			player.chomp_greeting()
 			get_viewport().set_input_as_handled()
 
 
@@ -230,10 +235,6 @@ func _spawn_evil_bots() -> void:
 		index += 1
 
 
-const RAIN_RADIUS := 72.0  # Four times the previous 18 m reach.
-const CIRCLE_RANGE := 13.5  # Fifteen player collision diameters (0.9 m each).
-
-
 func attack_name(charge: float) -> String:
 	if charge >= 1.0:
 		return "Laser rain"
@@ -249,19 +250,16 @@ func attack_name(charge: float) -> String:
 func _on_player_fired(origin: Vector3, direction: Vector3, character_id: String, charge: float = 0.0) -> void:
 	var color := Game.laser_color(character_id)
 	if charge >= 1.0:
-		# Start above the local ground so the rain also reaches hilltops.
 		var centre: Vector3 = player.global_position
-		for i in 48:
-			var radius := RAIN_RADIUS * sqrt(float(i) / 47.0)
-			var angle := float(i) * 2.399963
-			var rain_origin := centre + Vector3(cos(angle) * radius, 0, sin(angle) * radius)
-			var ground: float = environment.get_height_at(rain_origin.x, rain_origin.z)
-			rain_origin.y = maxf(ground, centre.y) + 12.0
-			_spawn_laser(rain_origin, Vector3.DOWN, color, 0.25)
+		_spawn_rain_wave(centre, 0)
+		var rain := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_STOP)
+		for wave in range(1, RAIN_WAVES):
+			rain.tween_interval(RAIN_WAVE_INTERVAL)
+			rain.tween_callback(_spawn_rain_wave.bind(centre, wave))
 	elif charge >= 0.75:
 		for i in 24:
 			var radial := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 24.0)
-			_spawn_laser(player.global_position + Vector3.UP, radial, color, 0.25, CIRCLE_RANGE)
+			_spawn_laser(player.global_position + Vector3.UP, radial, color, 0.25)
 	elif charge >= 0.5:
 		for i in range(-2, 3):
 			_spawn_laser(origin, direction.rotated(Vector3.UP, i * 0.12), color, 0.25)
@@ -270,11 +268,24 @@ func _on_player_fired(origin: Vector3, direction: Vector3, character_id: String,
 	Game.play_sfx("laser")
 
 
-func _spawn_laser(origin: Vector3, direction: Vector3, color: Color, charge: float, distance: float = 72.0) -> void:
+func _spawn_rain_wave(centre: Vector3, wave: int) -> void:
+	if _finished:
+		return
+	# Rotate each wave to fill gaps, and start above the local ground to reach hilltops.
+	for i in RAIN_BEAMS_PER_WAVE:
+		var radius := RAIN_RADIUS * sqrt(float(i) / (RAIN_BEAMS_PER_WAVE - 1))
+		var angle := float(i) * 2.399963 + wave * 0.6
+		var origin := centre + Vector3(cos(angle) * radius, 0, sin(angle) * radius)
+		var ground: float = environment.get_height_at(origin.x, origin.z)
+		origin.y = maxf(ground, centre.y) + 12.0
+		var color: Color = RAIN_COLORS[(i + wave) % RAIN_COLORS.size()]
+		_spawn_laser(origin, Vector3.DOWN, color, 0.25)
+
+
+func _spawn_laser(origin: Vector3, direction: Vector3, color: Color, charge: float) -> void:
 	var laser: Area3D = LASER_SCENE.instantiate()
 	laser.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(laser)
-	laser.max_distance = distance
 	laser.launch(origin, direction, color, charge)
 
 
@@ -344,7 +355,7 @@ func _on_orb_collected(_orb: Node3D) -> void:
 			_boss.fired.connect(_on_enemy_fired)
 			_boss.health_changed.connect(_on_boss_health_changed)
 			add_child(_boss)
-			_on_boss_health_changed(_boss.health, _boss.MAX_HEALTH)
+			_on_boss_health_changed(_boss.health, _boss.max_health)
 			Game.play_boss_music()
 			show_status("The Alien Overlord emerges! Defeat it to unlock the portal.", 5.0)
 	else:
@@ -394,6 +405,7 @@ func _update_hud() -> void:
 
 func _try_again() -> void:
 	get_tree().paused = false
+	Game.reset_run()
 	get_tree().change_scene_to_file(GAME_SCENE)
 
 
