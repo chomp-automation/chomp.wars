@@ -1,11 +1,14 @@
 extends Area3D
-## Portal guardian: thirty times a regular enemy's one-hit health.
+## Portal guardian that strafes after emerging and cycles between three attack patterns.
 
 signal destroyed(enemy: Node3D)
 signal fired(origin: Vector3, direction: Vector3)
 signal health_changed(current: int, maximum: int)
 
-const MAX_HEALTH := 30
+const MAX_HEALTH := 300
+const FIRE_COOLDOWN := 1.35
+const WOUNDED_FIRE_COOLDOWN := 0.85
+const BURST_INTERVAL := 0.18
 var health := MAX_HEALTH
 var enemy_name := "Alien Overlord"
 var _attack_index := 0
@@ -13,7 +16,9 @@ var _burst_remaining := 0
 var _burst_timer := 0.0
 var _cooldown := 2.0
 var _emergence := 0.0
+var _strafe_time := 0.0
 var _portal := Vector3.ZERO
+var _environment: Node
 var _health_label: Label3D
 
 
@@ -24,6 +29,7 @@ func _ready() -> void:
 	collision_mask = 0
 	monitoring = false
 	_portal = position
+	_environment = get_tree().get_first_node_in_group("environment")
 	# Oversized green head, black almond eyes, torso, long arms and legs.
 	_part(Vector3(0, 4.8, 0), Vector3(1.7, 1.9, 1.2), Color(0.35, 0.8, 0.25))
 	_part(Vector3(0, 2.6, 0), Vector3(1.1, 1.8, 0.8), Color(0.2, 0.42, 0.17))
@@ -50,8 +56,12 @@ func _process(delta: float) -> void:
 	if health <= 0:
 		return
 	# Walk out of the portal before attacking, leaving the portal visible behind.
+	_strafe_time += maxf(delta - (2.0 - _emergence), 0.0)
 	_emergence = minf(_emergence + delta, 2.0)
-	position = _portal + Vector3(0, 0, _emergence * 3.0)
+	position = _portal + Vector3(sin(_strafe_time * 1.5) * 4.5, 0,
+		_emergence * 3.0 + sin(_strafe_time * 2.3) * 1.5)
+	if _environment != null:
+		position.y = _environment.get_height_at(position.x, position.z)
 	var player := get_tree().get_first_node_in_group("player") as Node3D
 	if player == null:
 		return
@@ -63,11 +73,11 @@ func _process(delta: float) -> void:
 		if _burst_timer <= 0:
 			_fire_aimed(player.global_position + Vector3.UP)
 			_burst_remaining -= 1
-			_burst_timer = 0.3
+			_burst_timer = BURST_INTERVAL
 	_cooldown -= delta
 	if _emergence >= 2.0 and _cooldown <= 0:
 		attack(player.global_position + Vector3.UP)
-		_cooldown = 1.8 if health <= MAX_HEALTH / 2 else 2.5
+		_cooldown = WOUNDED_FIRE_COOLDOWN if health <= MAX_HEALTH / 2 else FIRE_COOLDOWN
 
 
 func attack(target: Vector3) -> void:
@@ -88,7 +98,7 @@ func attack(target: Vector3) -> void:
 			# Re-aim each shot rather than firing at the player's old position.
 			_fire_aimed(target)
 			_burst_remaining = 3
-			_burst_timer = 0.3
+			_burst_timer = BURST_INTERVAL
 	_attack_index += 1
 
 

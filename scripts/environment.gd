@@ -94,7 +94,7 @@ const ENEMY_POSITIONS := [
 	Vector2(-2, -44),
 	Vector2(22, 38),
 ]
-const ENEMY_HOVER_HEIGHT := 3.0
+const ENEMY_HOVER_HEIGHT := 5.0
 # Where the evil chompbots start. They roam about 10 m from each spot, on the ground.
 const EVIL_BOT_POSITIONS := [
 	Vector2(-14, -6),

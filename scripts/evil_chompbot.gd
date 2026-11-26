@@ -1,8 +1,6 @@
 extends Area3D
 ## An evil chompbot: a larger copy of the mascot with red highlights and a ring of teeth.
-## It is bigger than the player. It roams the moonscape on its own, walking between spots on the
-## ground. When the player is close it turns to face them and fires a red laser. One laser hit
-## destroys it in an explosion.
+## It roams the moonscape and strafes while firing red lasers at nearby players.
 
 signal destroyed(enemy: Node3D)
 signal fired(origin: Vector3, direction: Vector3)
@@ -10,18 +8,21 @@ signal fired(origin: Vector3, direction: Vector3)
 const ChompModel := preload("res://scripts/chomp_model.gd")
 
 const ENEMY_LAYER := 2  # collision layer that lasers look for
+const MAX_HEALTH := 10
 const BOT_SCALE := 2.4  # the model's size, relative to the player's (the player is 1.0)
 const HOVER_HEIGHT := 1.8  # the centre sits this far above the ground (about 0.75 x BOT_SCALE)
 const BODY_RADIUS := 2.1  # the laser target, in metres
 const ROAM_RADIUS := 10.0  # metres from the home spot the bot wanders
-const ROAM_SPEED := 1.9  # metres per second
-const PAUSE_MIN := 1.0
-const PAUSE_MAX := 3.0
+const ROAM_SPEED := 3.2  # metres per second
+const STRAFE_SPEED := 5.5
+const PAUSE_MIN := 0.3
+const PAUSE_MAX := 1.0
 const FIRE_RANGE := 24.0  # the bot shoots only when the player is this close
-const FIRE_COOLDOWN := 3.0
+const FIRE_COOLDOWN := 1.1
 const TEETH_COUNT := 12
 
 var enemy_name := "Evil Chompbot"
+var health := MAX_HEALTH
 
 var _environment  # the Environment node: get_height_at() and is_roam_clear()
 var _home := Vector3.ZERO
@@ -30,6 +31,7 @@ var _model: Node3D
 var _target := Vector2.ZERO
 var _pause_left := 0.0
 var _fire_cooldown := 0.0
+var _strafe_direction := 1.0
 var _player: Node3D
 var _dead := false
 
@@ -49,7 +51,7 @@ func _ready() -> void:
 	monitoring = false
 	monitorable = true
 	_build_visuals()
-	_fire_cooldown = _rng.randf_range(1.0, FIRE_COOLDOWN)
+	_fire_cooldown = _rng.randf_range(0.7, FIRE_COOLDOWN)
 	_pause_left = _rng.randf_range(0.0, PAUSE_MAX)
 	_place_on_ground(Vector2(_home.x, _home.z))
 	_pick_target()
@@ -58,11 +60,12 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _dead:
 		return
-	if _player == null:
+	if not is_instance_valid(_player):
 		_player = get_tree().get_first_node_in_group("player") as Node3D
 	_fire_cooldown = maxf(_fire_cooldown - delta, 0.0)
 
 	if _player != null and _distance_to_player() < FIRE_RANGE:
+		_strafe(delta)
 		var player_point := Vector3(_player.global_position.x, position.y, _player.global_position.z)
 		_face(player_point)
 		if _fire_cooldown <= 0.0:
@@ -84,9 +87,12 @@ func _process(delta: float) -> void:
 	_face(Vector3(_target.x, position.y, _target.y))
 
 
-## Called by a laser when it hits. One hit destroys the bot.
+## Returns true if this hit destroyed the bot.
 func hit() -> bool:
 	if _dead:
+		return false
+	health -= 1
+	if health > 0:
 		return false
 	_dead = true
 	set_deferred("monitorable", false)
@@ -99,6 +105,21 @@ func hit() -> bool:
 func _distance_to_player() -> float:
 	var offset := Vector2(_player.global_position.x - position.x, _player.global_position.z - position.z)
 	return offset.length()
+
+
+func _strafe(delta: float) -> void:
+	var here := Vector2(position.x, position.z)
+	var player_point := Vector2(_player.global_position.x, _player.global_position.z)
+	var offset := here - player_point
+	var radial := offset.normalized() if offset.length_squared() > 0.01 else Vector2.RIGHT
+	var tangent := radial.orthogonal() * _strafe_direction
+	var retreat := radial * clampf((8.0 - offset.length()) / 4.0, -0.5, 1.0)
+	var centre := Vector2(_home.x, _home.z)
+	var next := here + (tangent + retreat).normalized() * STRAFE_SPEED * delta
+	if next.distance_to(centre) > ROAM_RADIUS + 4.0 or not _environment.is_roam_clear(next):
+		_strafe_direction *= -1.0
+		return
+	_place_on_ground(next)
 
 
 ## Picks a new spot to walk to, a random point within ROAM_RADIUS that the terrain allows.
@@ -127,8 +148,7 @@ func _face(point: Vector3) -> void:
 ## Fires one red laser from the mouth towards the player's chest.
 func _shoot() -> void:
 	_fire_cooldown = FIRE_COOLDOWN
-	var forward := -global_transform.basis.z
-	var origin := global_position + Vector3(0, 0.3, 0) + forward * 1.6
+	var origin := global_position + Vector3(0, 0.3, 0)
 	var aim := _player.global_position + Vector3(0, 1.0, 0) - origin
 	fired.emit(origin, aim.normalized())
 

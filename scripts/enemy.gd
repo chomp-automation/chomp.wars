@@ -1,26 +1,38 @@
 extends Area3D
-## A hovering enemy drone. It drifts and bobs around its home point. One laser hit destroys
-## it and scores points (see game_state.gd). Drones do not hurt the player.
+## A hovering saucer that follows and circles nearby players while firing red lasers.
 
 signal destroyed(enemy: Node3D)
+signal fired(origin: Vector3, direction: Vector3)
 
 var enemy_name := "Drone"
 
 const ENEMY_LAYER := 2  # collision layer that lasers look for
-const DRIFT_RADIUS := 1.8
-const BOB_HEIGHT := 0.35
+const MAX_HEALTH := 10
+const DRIFT_RADIUS := 3.0
+const BOB_HEIGHT := 0.65
+const AGGRO_RANGE := 26.0
+const HOME_RANGE := 36.0
+const ORBIT_DISTANCE := 8.0
+const FLIGHT_SPEED := 7.0
+const FIRE_COOLDOWN := 1.4
 const DEATH_TIME := 0.2
 
 var home := Vector3.ZERO
+var health := MAX_HEALTH
+var _environment: Node
+var _player: Node3D
 var _phase := 0.0
 var _time := 0.0
+var _fire_cooldown := FIRE_COOLDOWN
 var _dead := false
 
 
 ## Call before adding the drone to the tree.
-func setup(home_position: Vector3, phase: float) -> void:
+func setup(home_position: Vector3, phase: float, environment: Node = null) -> void:
 	home = home_position
 	_phase = phase
+	_environment = environment
+	_fire_cooldown += fposmod(phase, 1.0)
 
 
 func _ready() -> void:
@@ -38,21 +50,44 @@ func _process(delta: float) -> void:
 	if _dead:
 		return
 	_time += delta
-	var angle := _time * 0.6 + _phase
-	position = home + Vector3(cos(angle) * DRIFT_RADIUS, sin(_time * 1.3 + _phase) * BOB_HEIGHT,
-			sin(angle) * DRIFT_RADIUS)
-	rotate_y(delta * 0.8)
+	_fire_cooldown -= delta
+	if not is_instance_valid(_player):
+		_player = get_tree().get_first_node_in_group("player") as Node3D
+	var centre := Vector2(home.x, home.z)
+	var here := Vector2(position.x, position.z)
+	var angle := _time * 1.2 + _phase
+	var target := centre + Vector2(cos(angle), sin(angle)) * DRIFT_RADIUS
+	if _player != null:
+		var player_point := Vector2(_player.global_position.x, _player.global_position.z)
+		if here.distance_to(player_point) <= AGGRO_RANGE and centre.distance_to(player_point) <= HOME_RANGE:
+			var offset := here - player_point
+			var radial := offset.normalized() if offset.length_squared() > 0.01 else Vector2.RIGHT
+			var orbit := radial.rotated(0.55 if sin(_phase) >= 0.0 else -0.55)
+			target = centre + (player_point + orbit * ORBIT_DISTANCE - centre).limit_length(HOME_RANGE)
+			if _fire_cooldown <= 0.0:
+				var origin := global_position - Vector3.UP * 0.25
+				fired.emit(origin, (_player.global_position + Vector3.UP - origin).normalized())
+				_fire_cooldown = FIRE_COOLDOWN
+	var next := here.move_toward(target, FLIGHT_SPEED * delta)
+	var altitude := home.y
+	if _environment != null:
+		altitude = _environment.get_height_at(next.x, next.y) + _environment.ENEMY_HOVER_HEIGHT
+	position = Vector3(next.x, altitude + sin(_time * 2.3 + _phase) * BOB_HEIGHT, next.y)
+	rotate_y(delta * 1.8)
 
 
 ## Called by a laser when it hits. Returns true if this hit destroyed the drone.
 func hit() -> bool:
 	if _dead:
 		return false
+	health -= 1
+	if health > 0:
+		return false
 	_dead = true
 	set_deferred("monitorable", false)
 	destroyed.emit(self)
 	var tween := create_tween()
-	tween.tween_property(self, "scale", Vector3.ZERO, DEATH_TIME)
+	tween.tween_property(self, "scale", Vector3.ONE * 0.02, DEATH_TIME)
 	tween.tween_callback(queue_free)
 	return true
 

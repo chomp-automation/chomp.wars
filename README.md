@@ -93,12 +93,10 @@ A wired or Bluetooth controller works alongside the keyboard. Pair it with your 
 
 1. Pick **Chomp** or **Mrs. Chomp** on the start screen (both turn slowly and chomp in their previews). Press **Music** to choose the background music: Starlight (the default), Extra Terrestrial or Hard Rock. Then press **Start**.
 2. Walk into the glowing purple backlog cards to collect issues. Each card has an open-issue symbol, title lines and a BACKLOG label. The north-up minimap at the top right shows your heading (white arrow), remaining issues (purple cards), enemies (red diamonds) and the portal (grey ring, mint when open). Your score is at the top left, with the issue counter to its right. Each issue you collect refills your energy to 100%.
-3. UFO-shaped saucer drones float over the moonscape, and several small evil chompbots roam the ground. Aim with the crosshair and hold **Space** to charge and release to fire. Each drone or evil chompbot you destroy scores **100 points**; the score is shown at the top left.
-4. One laser hit destroys an evil chompbot. They are about two and a half times your size and fire red lasers when you are close. Each red laser hit takes a third of your cyan **Chomp Energy** bar; collecting an issue refills it. Three hits and the run is over. Water sends you back to the starting pad. Cliffs are walls: walk around them. The timer sits next to **Pause**. After two minutes, both gameplay and music speed up.
-5. Collecting all 10 issues summons a giant Alien Overlord from the portal, with 30 hitpoints (30 times a regular enemy). A health bar at the top of the screen tracks the alien’s remaining health, and every hit triggers a synthesized alien yell. Hard Rock plays during the fight. The boss cycles through a three-shot aimed spread, a twelve-shot radial barrage and a four-shot tracking burst; below half health it attacks more often. Each attack has an audio cue. The portal stays locked until the alien is defeated; trying it early plays an error cue and pushes you out. Defeat the boss, then walk through the glowing portal to win.
+3. UFO saucers pursue, circle and fire when Chomp comes within 26 metres. Evil chompbots strafe and fire when Chomp gets close. Both take **10 laser hits** to defeat and score **100 points** per kill. Aim with the crosshair and hold **Space** to charge, then release to fire.
+4. Solid terrain and obstacles block both sides’ lasers. Each red laser hit takes a third of your cyan **Chomp Energy** bar. Three hits end the run. Water sends you back to the starting pad. The timer sits next to **Pause**. After two minutes, both gameplay and music speed up.
+5. Collecting all 10 issues summons a giant Alien Overlord with **300 hitpoints**. It strafes after emerging and cycles through a three-shot aimed spread, a twelve-shot radial barrage and a four-shot tracking burst. It attacks more often at half health and below. A health bar tracks its remaining health, every hit triggers an alien yell, and Hard Rock plays during the fight. The portal stays locked until the alien is defeated. Walk through the glowing portal to win.
 6. On the victory screen, choose **Play Again**, **Main Menu** or **Quit**. It shows your issues, enemies destroyed and score.
-
-Drones do not hurt you. Evil chompbots and their red lasers do: each hit takes a third of your energy, and three hits end the run.
 
 Press the **bottom face button** (or **E**) with no signpost nearby and the character turns half a circle to face the camera, opening its mouth wide and snapping it shut with a chomp sound. Press it again to turn back.
 
@@ -109,7 +107,7 @@ The reflective dome moonbase has an airlock, solar panels and an antenna. Ten ti
 | Path | What it is |
 |---|---|
 | `project.godot` | Godot project settings. |
-| `scenes/` | The scenes: `MainMenu`, `MainGame`, `Player`, `Orb` (the collectible issue), `Enemy` (the hovering drone), `EvilChompbot`, `EnemyLaser` (the evil chompbots' red lasers), `Laser`, `Environment`, `VictoryScreen`. |
+| `scenes/` | The scenes: `MainMenu`, `MainGame`, `Player`, `Orb` (the collectible issue), `Enemy` (the hovering drone), `EvilChompbot`, `EnemyLaser` (red lasers), `Laser`, `Environment`, `VictoryScreen`. |
 | `scripts/` | GDScript for each scene, plus `game_state.gd` (the global run state, score, sound and music) and `chomp_model.gd` (the shared mascot model, Mrs. Chomp recolour and the chomping mouth). |
 | `assets/models/chomp_mascot.glb.bin` | The mascot model, supplied pre-built, with the body baked at each mouth step so the jaw can close. Loaded at run time by `scripts/chomp_model.gd`. |
 | `assets/audio/` | Three background music tracks and the sound effects (laser, enemy laser, explosion, collect, jump, chomp; generated, see below). Stored as `.wav.bin` so Godot does not import them; the game reads the WAV data directly. |
@@ -134,7 +132,7 @@ Run the smoke test from the repository root:
 godot --headless --path . -s res://tests/smoke_test.gd
 ```
 
-It loads every scene, checks that the player stands on the terrain, walks, turns with A and D, jumps, changes the background music, collects the 10 issues, activates and uses the portal, resets after water, returns from the victory screen, restarts a run, switches to Mrs. Chomp, toggles pause, fires pink lasers, scores drone kills, checks the evil chompbots (roaming, red lasers, one-hit kills, larger than the player), the energy bar (cyan, black text, refilled by an issue) and game over after three laser hits, the HUD layout and time counter, the moonbase, the dark lake and pond (not blue), the few moon rocks, the chomp greeting turn, the music speed control, the sound effects, the invisible world edge and the Space and Shift key bindings. It also sends simulated controller input: every action has a controller binding, the left stick moves, the right stick turns and tilts the view (and ignores small drift), the right face button jumps, the top face button fires, L2 locks movement for faster aiming, R2 zooms 5x, the left face button switches the view, Start pauses, and the bottom face button presses the focused button on the pause menu and start screen. It prints `PASS` or `FAIL` for each check and exits with code 0 when all pass.
+The smoke test drives the real game scenes through movement, keyboard and controller input, weapon charges, combat, issue collection, the locked portal, victory and restart. It checks enemy health and attack cadence, UFO pursuit, the 72-metre laser rain radius, and projectile impacts against cover and the heightmap. It prints `PASS` or `FAIL` for each check and exits with code 0 when all pass. The [combat acceptance checklist](tests/combat_uat.md) covers the same changes in a playable run.
 
 The headless run may print `Parameter "m" is null` messages after a scene is removed. These come from Godot's headless renderer and do not affect the result. The test exit code is the thing to check.
 
@@ -211,8 +209,6 @@ Pass `--skip-tests` for fast iterative redeployment.
 - The game was checked on Linux with the headless smoke test. The three builds were exported in an earlier pass; they need to be exported again after the drone and laser changes. Windows and macOS builds have **not** been run on those systems yet.
 - Frame-rate (60 fps target) has not been measured on real hardware. The start screen now renders two live 3D previews, which adds some cost.
 - The mouth closes like a jaw: the top stays fixed and the bottom closes up to it. The model holds the body at 17 mouth steps and the game shows one at a time, so the motion moves in small steps.
-- Drones are targets only. They do not damage the player, and there are six of them.
-- Evil chompbots are new and have not been playtested. Their size, roaming, red laser speed and the 3-second fire cooldown may need tuning.
 - Controller support is tested with simulated input in the headless smoke test only. It has not yet been tried with a physical controller, wired or Bluetooth. Stick look speed and deadzone may need tuning after that.
 - Jump moved from Space to Shift, because Space now fires. The original spec gave Space to jump.
 - Mrs. Chomp is the same model recoloured and slightly slimmer at runtime. She is not a separately modelled character.
@@ -224,7 +220,7 @@ Pass `--skip-tests` for fast iterative redeployment.
 - Built with [Godot Engine](https://godotengine.org/) 4.3, which is MIT-licensed. Include Godot's licence notice with any distributed build.
 - The mascot model, logo and audio were made for Chomp.
 
-The charge bar has four marked quarters and shows the percentage and attack name. Charge takes ten real-time seconds, even after the game speeds up. Release below 25% for a single laser, at 25–49% for a big beam, at 50–74% for five lasers, or at 75–99% for a circle of 24 lasers limited to fifteen Chomp widths (13.5 metres) from Chomp. At 100%, release for 48 downward beams within twenty Chomp widths (18 metres), twice the previous radius. The bar and companion lights symbolize adversarial agents helping Chomp; this is an in-game metaphor. Pausing or respawning cancels a pending charge.
+The charge bar has four marked quarters and shows the percentage and attack name. Charge takes ten real-time seconds, even after the game speeds up. Release below 25% for a single laser, at 25–49% for a big beam, at 50–74% for five lasers, or at 75–99% for a circle of 24 lasers limited to fifteen Chomp widths (13.5 metres) from Chomp. At 100%, release for 48 downward beams spread across a 72-metre radius, four times the previous reach. The bar and companion lights symbolize adversarial agents helping Chomp; this is an in-game metaphor. Pausing or respawning cancels a pending charge.
 
 ## Copyright and licence
 
