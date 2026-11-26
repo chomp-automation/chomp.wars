@@ -12,6 +12,7 @@ const SCENE_PATHS := [
 	"res://scenes/Orb.tscn",
 	"res://scenes/Enemy.tscn",
 	"res://scenes/EvilChompbot.tscn",
+	"res://scenes/Laser.tscn",
 	"res://scenes/EnemyLaser.tscn",
 	"res://scenes/Environment.tscn",
 	"res://scenes/VictoryScreen.tscn",
@@ -27,6 +28,8 @@ var _game: Node
 var _env: Node
 var _player: CharacterBody3D
 var _game_state: Node
+var _cover: StaticBody3D
+var _player_before_cover: Vector3
 
 
 func _initialize() -> void:
@@ -47,9 +50,8 @@ func _physics_process(_delta: float) -> bool:
 		return false
 	match _step:
 		0:
-			# The bots are frozen for the rest of the test, so they cannot shoot the player or
-			# wander into the lasers. Their roaming is checked directly below.
-			_freeze_bots()
+			# Freeze enemy AI for the general playthrough and drive it explicitly in combat checks.
+			_freeze_enemies()
 			_check(_player.is_on_floor(), "player stands on the terrain at the start")
 			_check(absf(_player.global_position.y - _env.start_position.y) < 0.4,
 				"player start height matches the terrain")
@@ -151,9 +153,9 @@ func _physics_process(_delta: float) -> bool:
 			_check(_game_state.orbs_collected == 10, "collecting all orbs counts to 10 (got %d)" % _game_state.orbs_collected)
 			_check(not _env.portal_active, "portal stays locked after the tenth issue")
 			var boss = _game.get("_boss")
-			_check(_game.boss_health_bar.visible and _game.boss_health_bar.value == 30, "boss fight shows full screen health bar")
+			_check(_game.boss_health_bar.visible and _game.boss_health_bar.value == 300, "boss fight shows 300 health")
 			boss.set_process(false)
-			_check(boss.health == 30, "alien has thirty times regular enemy health")
+			_check(boss.health == 300, "alien has ten times its original health")
 			_check(_game_state._music_player.stream == _game_state._music_streams[2], "boss starts Hard Rock music")
 			_check(_game_state._sounds.has("boss_attack") and _game_state._sounds.has("portal_error"), "boss attack and blocked portal have audio cues")
 			_remove_enemy_lasers()
@@ -169,25 +171,32 @@ func _physics_process(_delta: float) -> bool:
 				boss._process(0.31)
 			_check(_live_enemy_laser_count() == 4 and boss._burst_remaining == 0, "tracking burst fires four timed shots")
 			_remove_enemy_lasers()
+			boss._process(1.08)
+			_check(_live_enemy_laser_count() == 3, "boss attacks as soon as it emerges")
+			var boss_position: Vector3 = boss.position
+			boss._process(1.36)
+			_check(boss.position.distance_to(boss_position) > 1.0, "boss strafes after emerging")
+			_check(_live_enemy_laser_count() == 15, "boss attacks again within 1.36 seconds at full health")
+			_remove_enemy_lasers()
 			_player.respawn(boss.global_position)
 			_env.portal_entered.emit(_player)
 			_check(not _game.get("_finished"), "living boss prevents victory")
 			_check((Vector2(_player.position.x, _player.position.z) - _env.PORTAL_POSITION).length() >= 3.9, "blocked portal pushes player out")
-			for i in 29:
-				_check(not boss.hit(), "alien survives hit %d" % (i + 1))
-			_check(not _env.portal_active, "portal remains locked at one boss hitpoint")
-			_check(_game.boss_health_bar.value == 1, "screen health bar tracks damage")
 			var cries := 0
+			_check(not boss.hit(), "boss survives its first hit")
 			for child in _game_state.get_children():
 				if child is AudioStreamPlayer and child.stream == _game_state._sounds["boss_hit"]:
 					cries += 1
-			_check(cries == 29, "every damaging hit plays an alien yell")
+			_check(cries == 1, "a damaging hit plays an alien yell")
+			_check(_damage_without_destroying(boss, 298), "boss survives the next 298 hits")
+			_check(not _env.portal_active, "portal remains locked at one boss hitpoint")
+			_check(_game.boss_health_bar.value == 1, "screen health bar tracks damage")
 			boss._emergence = 2.0
 			boss._cooldown = 0.0
 			boss._process(0.01)
-			_check(is_equal_approx(boss._cooldown, 1.8), "wounded boss attacks faster")
+			_check(is_equal_approx(boss._cooldown, 0.85), "wounded boss attacks faster")
 			_remove_enemy_lasers()
-			_check(boss.hit(), "thirtieth hit defeats the alien")
+			_check(boss.hit(), "300th hit defeats the alien")
 			_check(_env.portal_active, "boss defeat opens the portal")
 			_check(not _game.boss_health_bar.visible, "boss defeat hides screen health bar")
 			_check(_game_state._music_player.stream == _game_state._music_streams[_game_state.selected_music], "boss defeat restores selected music")
@@ -218,7 +227,7 @@ func _physics_process(_delta: float) -> bool:
 			_step = 9
 		9:
 			_refresh_game_refs()
-			_freeze_bots()
+			_freeze_enemies()
 			_remove_enemy_lasers()
 			_check(_game_state.orbs_collected == 0, "a new run starts with 0 orbs")
 			_check(_orb_count() == 10, "a restarted run places 10 orbs again")
@@ -255,21 +264,28 @@ func _physics_process(_delta: float) -> bool:
 			_step = 102
 		102:
 			_check(_laser_count() == 48, "full charge releases laser rain")
+			var rain_reach := 0.0
+			var rain_starts_above_ground := true
+			var rain_falls_down := true
 			for laser in get_nodes_in_group("laser"):
 				var offset: Vector3 = laser.global_position - _player.global_position
-				_check(Vector2(offset.x, offset.z).length() <= 18.001, "rain stays within twenty Chomps")
-				_check(laser._direction == Vector3.DOWN, "rain falls downward")
+				rain_reach = maxf(rain_reach, Vector2(offset.x, offset.z).length())
+				var ground: float = _env.get_height_at(laser.position.x, laser.position.z)
+				rain_starts_above_ground = rain_starts_above_ground and laser.position.y > ground
+				rain_falls_down = rain_falls_down and laser._direction == Vector3.DOWN
 				laser.free()
+			_check(absf(rain_reach - 72.0) < 0.001, "rain reaches four times its previous radius")
+			_check(rain_starts_above_ground and rain_falls_down, "rain falls downward from above local terrain")
 			for sample in [[0.0, 1], [0.249, 1], [0.25, 1], [0.499, 1], [0.5, 5], [0.749, 5], [0.75, 24], [0.999, 24]]:
 				_game.call("_on_player_fired", _player.global_position + Vector3.UP, Vector3.FORWARD, "chomp", sample[0])
 				_check(_laser_count() == sample[1], "charge %.3f selects expected attack" % sample[0])
 				for laser in get_nodes_in_group("laser"):
 					if sample[0] >= 0.75:
-						_check(is_equal_approx(laser.max_distance + 0.8, 13.5), "circle stops at fifteen Chomp widths")
+						_check(is_equal_approx(laser.max_distance, 13.5), "circle stops at fifteen Chomp widths")
 						var start: Vector3 = laser.global_position
 						laser.call("_physics_process", 0.4)
 						_check(laser.is_queued_for_deletion(), "circle expires at its distance limit")
-						_check(laser.global_position.distance_to(start) <= 12.701, "circle never travels beyond range")
+						_check(laser.global_position.distance_to(start) <= 13.501, "circle never travels beyond range")
 					if sample[0] == 0.25:
 						_check(laser.scale.x > 2.0, "second stage creates a big beam")
 					laser.free()
@@ -339,7 +355,10 @@ func _physics_process(_delta: float) -> bool:
 			var drone := _first_drone()
 			_check(drone != null, "a drone is available to shoot")
 			if drone != null:
-				drone.hit()
+				_check(_damage_without_destroying(drone, 9) and drone.get("health") == 1,
+					"UFO survives nine hits")
+				_check(_game_state.score == 0, "damaging a UFO awards no points")
+				_check(drone.hit(), "tenth hit destroys a UFO")
 			_check(_game.get_node("Hud/Minimap").markers(&"enemy").size() == 10, "destroyed enemies disappear from map immediately")
 			_check(_game_state.score == POINTS_PER_DRONE, "destroying a drone scores points (score %d)" % _game_state.score)
 			_check(_game.get_node("Hud/ScoreLabel").text == "Score: %d" % _game_state.score, "score is shown on the HUD")
@@ -347,15 +366,43 @@ func _physics_process(_delta: float) -> bool:
 			_step = 12
 		12:
 			_check(_drone_count() == 5, "a destroyed drone is removed (found %d)" % _drone_count())
-			# Aim a laser at a live drone from a few metres away, then let it fly.
 			var target := _first_drone()
 			if target != null:
-				var from := target.global_position + Vector3(0, 0, 3.0)
-				_game.call("_on_player_fired", from, Vector3(0, 0, -1), "chomp")
-			_wait = 60
+				_check_drone_pursuit(target)
+				_set_up_cover(target)
+			_wait = 2
+			_step = 120
+		120:
+			var target := _first_drone()
+			if target != null:
+				_check_projectile_cover(target)
+				_cover.queue_free()
+			_wait = 2
+			_step = 121
+		121:
+			var target := _first_drone()
+			if target != null:
+				_game.call("_spawn_laser", target.global_position + Vector3.RIGHT * 5.0, Vector3.LEFT, Color.CYAN, 0.0)
+				var shot: Node = get_first_node_in_group("laser")
+				shot._physics_process(0.2)
+				_check(target.get("health") == 9, "an unobstructed laser damages the UFO exactly once")
+				shot.queue_free()
+				_check(_damage_without_destroying(target, 8), "UFO survives until its last hitpoint")
+				_game.call("_spawn_laser", target.global_position + Vector3.RIGHT * 5.0, Vector3.LEFT, Color.CYAN, 0.0)
+				var player_position := _player.global_position
+				var energy_before: float = _game_state.energy_fraction()
+				_game.call("_on_enemy_fired", player_position + Vector3(5, 0.6, 0), Vector3.LEFT)
+				get_nodes_in_group("enemy_laser").back()._physics_process(0.3)
+				_check(_player.global_position.is_equal_approx(player_position), "a red laser hit leaves Chomp in place")
+				_check(absf(_game_state.energy_fraction() - (energy_before - 1.0 / 3.0)) < 0.001,
+					"an unobstructed red laser takes a third of Chomp's energy")
+				_check(not _game.get_node("Hud/GameOverMenu").visible, "one enemy laser hit does not end the run")
+			_player.respawn(_player_before_cover)
+			_player.set_physics_process(true)
+			_wait = 30
 			_step = 13
 		13:
-			_check(_game_state.enemies_destroyed == 2, "a laser that hits a drone destroys it (kills %d)" % _game_state.enemies_destroyed)
+			_check(_game_state.enemies_destroyed == 2, "a laser destroys a UFO on its last hitpoint")
 			_check(_game_state.score == 2 * POINTS_PER_DRONE, "each kill adds points (score %d)" % _game_state.score)
 			_check_controller_bindings()
 			# Controller: push the left stick forward.
@@ -368,24 +415,20 @@ func _physics_process(_delta: float) -> bool:
 			if bot != null:
 				var kills_before: int = _game_state.enemies_destroyed
 				_remove_enemy_lasers()  # clear any shots already in flight, so the count below is this shot only
-				bot.set("_player", _player)  # frozen bots do not acquire a target in _process
-				bot.call("_shoot")
-				_check(_live_enemy_laser_count() == 1, "an evil chompbot fires a red laser at the player")
+				var before: Vector3 = bot.global_position
+				_player.respawn(before + Vector3(0, 0, 8))
+				bot._fire_cooldown = 0.0
+				bot._process(0.15)
+				_check(bot.global_position.distance_to(before) > 0.5, "a chompbot strafes in combat")
+				_check(_live_enemy_laser_count() == 1, "an evil chompbot fires at a nearby player")
+				bot._process(1.11)
+				_check(_live_enemy_laser_count() == 2, "a chompbot fires again within 1.11 seconds")
 				_remove_enemy_lasers()
 				_check(_has_red_surface(bot.get_node("Model")), "evil chompbots are red")
-				var destroyed: bool = bot.hit()
-				_check(destroyed, "one laser hit destroys an evil chompbot")
+				_check(_damage_without_destroying(bot, 9) and bot.health == 1, "chompbot survives nine hits")
+				_check(bot.hit(), "tenth hit destroys a chompbot")
 				_check(_game_state.enemies_destroyed == kills_before + 1, "destroying an evil chompbot counts as a kill")
 			_remove_enemy_lasers()  # a shot still in flight from an earlier frame must not count here
-			_player.respawn(Vector3(5, 10, 5))
-			var position_before_hit := _player.global_position
-			var energy_before_hit: float = _game_state.energy_fraction()
-			_game.call("_on_enemy_laser_hit")
-			_check(_player.global_position.distance_to(position_before_hit) < 0.01,
-				"an enemy laser hit does not move the player back to the start")
-			_check(absf(_game_state.energy_fraction() - (energy_before_hit - 1.0 / 3.0)) < 0.001,
-				"an enemy laser hit takes a third of the energy (now %.2f)" % _game_state.energy_fraction())
-			_check(not _game.get_node("Hud/GameOverMenu").visible, "one enemy laser hit does not end the run")
 			_player.respawn(_env.start_position)
 			_wait = 2
 			_step = 14
@@ -627,10 +670,85 @@ func _first_bot() -> Area3D:
 	return null
 
 
-## Stops the evil chompbots thinking and moving, so the rest of the test is not disturbed.
-func _freeze_bots() -> void:
-	for node in get_nodes_in_group("evil_bot"):
+func _freeze_enemies() -> void:
+	for node in get_nodes_in_group("enemy"):
 		node.set_process(false)
+
+
+func _damage_without_destroying(enemy: Area3D, hits: int) -> bool:
+	for i in hits:
+		if enemy.hit():
+			return false
+	return true
+
+
+func _check_drone_pursuit(drone: Area3D) -> void:
+	var player_position := _player.global_position
+	var home: Vector3 = drone.get("home")
+	_remove_enemy_lasers()
+	_player.respawn(home + Vector3.RIGHT * 30.0)
+	drone.set("_fire_cooldown", 0.0)
+	drone._process(0.5)
+	_check(_live_enemy_laser_count() == 0 and drone.global_position.distance_to(home) < 3.5,
+		"an out-of-range UFO stays on patrol")
+	_player.respawn(home + Vector3.RIGHT * 18.0)
+	var before := drone.global_position.distance_to(_player.global_position)
+	drone._process(0.5)
+	_check(drone.global_position.distance_to(_player.global_position) < before - 2.0, "a nearby UFO follows the player")
+	_check(_live_enemy_laser_count() == 1, "a pursuing UFO fires at the player")
+	drone._process(1.41)
+	_check(_live_enemy_laser_count() == 2, "a pursuing UFO fires again within 1.41 seconds")
+	_remove_enemy_lasers()
+	_player.respawn(player_position)
+
+
+func _set_up_cover(drone: Area3D) -> void:
+	_player_before_cover = _player.global_position
+	_player.set_physics_process(false)
+	_player.respawn(Vector3(0, 30, 0))
+	drone.global_position = _player.global_position + Vector3.UP * 0.6
+	_cover = StaticBody3D.new()
+	_cover.position = Vector3(2, 30, 0)
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.1, 4.0, 4.0)
+	var shape := CollisionShape3D.new()
+	shape.shape = box
+	_cover.add_child(shape)
+	_game.add_child(_cover)
+
+
+func _check_projectile_cover(drone: Area3D) -> void:
+	var from := drone.global_position + Vector3.RIGHT * 5.0
+	_game.call("_spawn_laser", from, Vector3.LEFT, Color.CYAN, 0.65)
+	var shot: Node3D = get_first_node_in_group("laser")
+	shot._physics_process(0.2)
+	_check(shot.is_queued_for_deletion() and shot.position.x > 2.0 and drone.get("health") == 10,
+		"charged laser stops at thin cover without damaging the UFO behind it")
+	_game.call("_spawn_laser", Vector3(2, from.y, from.z), Vector3.LEFT, Color.CYAN, 0.0)
+	var muzzle_blocked: Node3D = get_nodes_in_group("laser").back()
+	muzzle_blocked._physics_process(0.2)
+	_check(muzzle_blocked.is_queued_for_deletion() and is_equal_approx(muzzle_blocked.position.x, 2.0)
+		and drone.get("health") == 10, "a shot that starts against cover cannot pass through it")
+	var energy_before: float = _game_state.energy_fraction()
+	_game.call("_on_enemy_fired", from, Vector3.LEFT)
+	var hostile: Node3D = get_nodes_in_group("enemy_laser").back()
+	hostile._physics_process(0.3)
+	_check(hostile.is_queued_for_deletion() and hostile.position.x > 2.0
+		and _game_state.energy_fraction() == energy_before, "cover blocks a red laser before it hits Chomp")
+	var ground: Vector3 = _env.start_position
+	_game.call("_spawn_laser", ground + Vector3.UP * 3.0, Vector3.DOWN, Color.CYAN, 0.25)
+	var rain: Node3D = get_nodes_in_group("laser").back()
+	rain._physics_process(0.2)
+	_check(rain.is_queued_for_deletion() and absf(rain.position.y - ground.y) < 0.5,
+		"a downward beam stops at the real heightmap terrain")
+	var rocks: Array = _env.get("_rocks")
+	_game.call("_spawn_laser", rocks[0].global_position + Vector3.UP * 4.0, Vector3.DOWN, Color.CYAN, 0.0)
+	get_nodes_in_group("laser").back()._physics_process(0.2)
+	_check(rocks.size() == 23, "a laser impact still destroys a moon rock")
+	var base_target: StaticBody3D = _env.get("_base_target")
+	_game.call("_spawn_laser", base_target.global_position + Vector3.LEFT * 4.0, Vector3.RIGHT, Color.CYAN, 0.0)
+	get_nodes_in_group("laser").back()._physics_process(0.2)
+	_check(_env.moonbase_hits() == 1, "a laser impact still registers on the moonbase target")
 
 
 ## True if the frozen lake (the big light-grey disc, drawn as a cylinder) is very dark.

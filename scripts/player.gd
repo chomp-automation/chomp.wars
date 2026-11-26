@@ -162,7 +162,7 @@ func fire(charge: float = 0.0) -> void:
 	_fire_timer = FIRE_COOLDOWN
 	_mouth_timer = MOUTH_FIRE_TIME
 	var forward := -camera.global_transform.basis.z
-	var origin := global_position + Vector3(0, 1.0, 0) + forward * 0.8
+	var origin := global_position + Vector3.UP
 	fired.emit(origin, forward, character_id, clampf(charge, 0.0, 1.0))
 
 

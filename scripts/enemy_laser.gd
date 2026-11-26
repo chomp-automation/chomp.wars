@@ -1,7 +1,5 @@
-extends Area3D
-## A red laser bolt shot by an evil chompbot. It flies straight, hits the player if it reaches
-## them, and bursts into a red flash when it hits anything (the player, the ground, rocks or walls),
-## or when its lifetime runs out.
+extends "res://scripts/projectile.gd"
+## A red laser that bursts into a flash when it hits the player or solid cover.
 
 signal player_hit
 
@@ -13,41 +11,32 @@ const BEAM_COLOR := Color(1.0, 0.1, 0.08)
 
 var _age := 0.0
 var _direction := Vector3.FORWARD
-var _spent := false
 
 
 func _ready() -> void:
 	add_to_group("enemy_laser")
-	collision_layer = 0
-	collision_mask = 1  # the terrain, rocks, walls and the player
-	monitoring = true
-	monitorable = false
+	_configure_sweep(1, RADIUS * 3.0)  # World bodies and the player.
 	_build_visuals()
-	body_entered.connect(_on_body_entered)
 
 
 ## Places the bolt at origin and aims it along direction.
 func launch(origin: Vector3, direction: Vector3) -> void:
 	global_position = origin
 	_direction = direction.normalized()
-	look_at(global_position + _direction, Vector3.UP)
+	look_at(global_position + _direction, Vector3.FORWARD if absf(_direction.y) > 0.99 else Vector3.UP)
 
 
 func _physics_process(delta: float) -> void:
-	if _spent:
+	if is_queued_for_deletion():
 		return
 	_age += delta
 	if _age >= LIFETIME:
 		queue_free()
 		return
-	global_position += _direction * SPEED * delta
-
-
-func _on_body_entered(body: Node3D) -> void:
-	if _spent:
+	var impact := _advance(_direction * SPEED * delta)
+	if impact == null:
 		return
-	_spent = true
-	if body.is_in_group("player"):
+	if impact.is_in_group("player"):
 		player_hit.emit()
 	_burst()
 	queue_free()
@@ -63,6 +52,7 @@ func _build_visuals() -> void:
 	cylinder.radial_segments = 8
 	bolt.mesh = cylinder
 	bolt.rotation_degrees = Vector3(90, 0, 0)  # the cylinder lies along the aim direction
+	bolt.position.z = LENGTH * 0.5
 	bolt.material_override = _unshaded(BEAM_COLOR)
 	add_child(bolt)
 
@@ -71,12 +61,6 @@ func _build_visuals() -> void:
 	glow.light_energy = 2.0
 	glow.omni_range = 4.0
 	add_child(glow)
-
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(RADIUS * 3.0, RADIUS * 3.0, LENGTH)
-	var collision := CollisionShape3D.new()
-	collision.shape = shape
-	add_child(collision)
 
 
 func _unshaded(color: Color) -> StandardMaterial3D:

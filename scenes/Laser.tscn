@@ -8,9 +8,6 @@ bottom_radius = 0.1
 height = 2.4
 radial_segments = 8
 
-[sub_resource type="BoxShape3D" id="BoxShape_bolt"]
-size = Vector3(0.25, 0.25, 2.0)
-
 [node name="Laser" type="Area3D"]
 script = ExtResource("1_laser")
 
@@ -20,6 +17,3 @@ mesh = SubResource("CylinderMesh_bolt")
 [node name="Glow" type="OmniLight3D" parent="."]
 light_energy = 1.5
 omni_range = 4.0
-
-[node name="Shape" type="CollisionShape3D" parent="."]
-shape = SubResource("BoxShape_bolt")
