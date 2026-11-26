@@ -1,15 +1,12 @@
-extends Area3D
-## A laser bolt fired by the player. It flies straight, hits the first enemy it touches
-## and then disappears. It also disappears after its lifetime runs out.
+extends "res://scripts/projectile.gd"
+## A laser bolt fired by the player. It stops on enemies and solid cover or when it reaches its range limit.
 
 const SPEED := 45.0
 const LIFETIME := 1.6
 
 var max_distance := SPEED * LIFETIME
 var _distance := 0.0
-var _age := 0.0
 var _direction := Vector3.FORWARD
-var _spent := false
 
 @onready var bolt: MeshInstance3D = $Bolt
 @onready var glow: OmniLight3D = $Glow
@@ -17,12 +14,10 @@ var _spent := false
 
 func _ready() -> void:
 	add_to_group("laser")
-	collision_layer = 0
-	collision_mask = 3  # enemy areas plus terrain bodies, rocks and the moonbase target
-	monitoring = true
-	monitorable = false
-	area_entered.connect(_on_area_entered)
-	body_entered.connect(_on_body_entered)
+	_configure_sweep(3, 0.25, true)  # World bodies and enemy areas.
+	var player := get_tree().get_first_node_in_group("player") as PhysicsBody3D
+	if player != null:
+		_sweep.add_exception(player)
 
 
 ## Places the bolt at origin, aims it along direction and gives it the character's colour.
@@ -33,6 +28,7 @@ func launch(origin: Vector3, direction: Vector3, color: Color, charge: float = 0
 	_direction = direction.normalized()
 	look_at(global_position + _direction, Vector3.FORWARD if absf(_direction.y) > 0.99 else Vector3.UP)
 	bolt.rotation_degrees = Vector3(90, 0, 0)  # the cylinder lies along the aim direction
+	bolt.position.z = 1.2  # The visual trails the swept nose.
 	var material := StandardMaterial3D.new()
 	# Unshaded, so the bolt keeps its colour whichever way it faces the sun.
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -47,47 +43,32 @@ func launch(origin: Vector3, direction: Vector3, color: Color, charge: float = 0
 			agent.mesh = sphere
 			agent.material_override = material
 			var angle := TAU * float(i) / 3.0
-			agent.position = Vector3(cos(angle) * 0.32, sin(angle) * 0.32, 0)
+			agent.position = Vector3(cos(angle) * 0.32, sin(angle) * 0.32, 1.2)
 			add_child(agent)
 	glow.light_color = color
 	glow.light_energy = 3.0
 
 
 func _physics_process(delta: float) -> void:
-	if _spent:
-		return
-	_age += delta
-	if _age >= LIFETIME:
-		queue_free()
+	if is_queued_for_deletion():
 		return
 	var travel := minf(SPEED * delta, max_distance - _distance)
-	global_position += _direction * travel
+	var impact := _advance(_direction * travel)
+	if impact != null:
+		_hit(impact)
+		queue_free()
+		return
 	_distance += travel
 	if _distance >= max_distance:
 		queue_free()
 
 
-func _on_area_entered(area: Area3D) -> void:
-	if _spent or not area.is_in_group("enemy"):
-		return
-	_spent = true
-	if area.has_method("hit"):
-		area.hit()
-	queue_free()
-
-
-func _on_body_entered(body: Node3D) -> void:
-	if _spent:
-		return
-	if not body.is_in_group("moon_rock") and not body.is_in_group("moonbase_target"):
-		return
-	_spent = true
-	if body.is_in_group("moon_rock"):
-		var environment := get_tree().get_first_node_in_group("environment")
-		if environment != null:
-			environment.destroy_rock(body)
-	elif body.is_in_group("moonbase_target"):
-		var environment := get_tree().get_first_node_in_group("environment")
-		if environment != null:
+func _hit(impact: Node3D) -> void:
+	if impact.is_in_group("enemy") and impact.has_method("hit"):
+		impact.hit()
+	var environment := get_tree().get_first_node_in_group("environment")
+	if environment != null:
+		if impact.is_in_group("moon_rock"):
+			environment.destroy_rock(impact)
+		elif impact.is_in_group("moonbase_target"):
 			environment.hit_moonbase()
-	queue_free()

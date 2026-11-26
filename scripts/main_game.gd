@@ -211,8 +211,9 @@ func _spawn_enemies() -> void:
 	for point in environment.get_enemy_spawn_points():
 		var enemy: Area3D = ENEMY_SCENE.instantiate()
 		enemy.process_mode = Node.PROCESS_MODE_PAUSABLE
-		enemy.setup(point, index * 1.7)
+		enemy.setup(point, index * 1.7, environment)
 		enemy.destroyed.connect(_on_enemy_destroyed)
+		enemy.fired.connect(_on_enemy_fired)
 		add_child(enemy)
 		index += 1
 
@@ -224,12 +225,12 @@ func _spawn_evil_bots() -> void:
 		bot.process_mode = Node.PROCESS_MODE_PAUSABLE
 		bot.setup(point, environment, 100 + index * 37)
 		bot.destroyed.connect(_on_enemy_destroyed)
-		bot.fired.connect(_on_bot_fired)
+		bot.fired.connect(_on_enemy_fired)
 		add_child(bot)
 		index += 1
 
 
-const RAIN_RADIUS := 18.0  # Twice the previous ten-Chomp radius.
+const RAIN_RADIUS := 72.0  # Four times the previous 18 m reach.
 const CIRCLE_RANGE := 13.5  # Fifteen player collision diameters (0.9 m each).
 
 
@@ -248,16 +249,19 @@ func attack_name(charge: float) -> String:
 func _on_player_fired(origin: Vector3, direction: Vector3, character_id: String, charge: float = 0.0) -> void:
 	var color := Game.laser_color(character_id)
 	if charge >= 1.0:
-		# Evenly spread downward beams in a disk, within twenty Chomps.
+		# Start above the local ground so the rain also reaches hilltops.
+		var centre: Vector3 = player.global_position
 		for i in 48:
 			var radius := RAIN_RADIUS * sqrt(float(i) / 47.0)
 			var angle := float(i) * 2.399963
-			var rain_origin: Vector3 = player.global_position + Vector3(cos(angle) * radius, 12, sin(angle) * radius)
+			var rain_origin := centre + Vector3(cos(angle) * radius, 0, sin(angle) * radius)
+			var ground: float = environment.get_height_at(rain_origin.x, rain_origin.z)
+			rain_origin.y = maxf(ground, centre.y) + 12.0
 			_spawn_laser(rain_origin, Vector3.DOWN, color, 0.25)
 	elif charge >= 0.75:
 		for i in 24:
 			var radial := Vector3.FORWARD.rotated(Vector3.UP, TAU * i / 24.0)
-			_spawn_laser(player.global_position + Vector3.UP + radial * 0.8, radial, color, 0.25, CIRCLE_RANGE - 0.8)
+			_spawn_laser(player.global_position + Vector3.UP, radial, color, 0.25, CIRCLE_RANGE)
 	elif charge >= 0.5:
 		for i in range(-2, 3):
 			_spawn_laser(origin, direction.rotated(Vector3.UP, i * 0.12), color, 0.25)
@@ -274,7 +278,7 @@ func _spawn_laser(origin: Vector3, direction: Vector3, color: Color, charge: flo
 	laser.launch(origin, direction, color, charge)
 
 
-func _on_bot_fired(origin: Vector3, direction: Vector3) -> void:
+func _on_enemy_fired(origin: Vector3, direction: Vector3) -> void:
 	var laser: Area3D = ENEMY_LASER_SCENE.instantiate()
 	laser.process_mode = Node.PROCESS_MODE_PAUSABLE
 	laser.player_hit.connect(_on_enemy_laser_hit)
@@ -282,7 +286,7 @@ func _on_bot_fired(origin: Vector3, direction: Vector3) -> void:
 	laser.launch(origin, direction)
 
 
-## An evil chompbot's red laser costs a third of the energy. When the energy runs out, the run is over.
+## A red laser costs a third of the energy. When the energy runs out, the run is over.
 func _on_enemy_laser_hit() -> void:
 	if _finished or _game_over:
 		return
@@ -337,7 +341,7 @@ func _on_orb_collected(_orb: Node3D) -> void:
 			var point: Vector2 = environment.PORTAL_POSITION
 			_boss.position = Vector3(point.x, environment.get_height_at(point.x, point.y), point.y)
 			_boss.destroyed.connect(_on_enemy_destroyed)
-			_boss.fired.connect(_on_bot_fired)
+			_boss.fired.connect(_on_enemy_fired)
 			_boss.health_changed.connect(_on_boss_health_changed)
 			add_child(_boss)
 			_on_boss_health_changed(_boss.health, _boss.MAX_HEALTH)
