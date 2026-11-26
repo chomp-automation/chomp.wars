@@ -14,6 +14,8 @@ signal fired(origin: Vector3, direction: Vector3, character_id: String, charge: 
 const ChompModel := preload("res://scripts/chomp_model.gd")
 
 const WALK_SPEED := 6.0
+const SPRINT_MULTIPLIER := 2.0
+const AIM_SPEED_MULTIPLIER := 0.7
 const JUMP_VELOCITY := 5.5
 const MOUSE_SENSITIVITY := 0.00165
 const LEAN_ANGLE := 0.35  # radians (about 20 degrees) of horizontal lean when turning
@@ -33,7 +35,6 @@ const FIRE_COOLDOWN := 0.35
 const MAX_CHARGE_TIME := 10.0
 const KEY_AIM_SPEED := 0.33  # radians per second for precise keyboard aiming
 const MOUTH_FIRE_TIME := 0.25  # seconds the mouth stays open after firing
-const GREET_TURN_TIME := 0.5  # seconds the 180-degree turn takes
 
 @onready var body: Node3D = $Body
 var model: Node3D
@@ -49,9 +50,6 @@ var charge_time := 0.0
 var _charging := false
 var _fire_timer := 0.0
 var _mouth_timer := 0.0
-var _flip_turn := 0.0  # extra yaw in radians: 0 or PI, animated by chomp_greeting()
-var _flipped := false
-var _greet_mouth := 0.0  # 0 to 1 mouth opening from chomp_greeting()
 
 
 func _ready() -> void:
@@ -90,9 +88,10 @@ func _physics_process(delta: float) -> void:
 	var forward_input := Input.get_axis("move_forward", "move_back")
 	var stick := Input.get_vector("stick_left", "stick_right", "stick_forward", "stick_back")
 	var aim_lock := Input.is_action_pressed("aim_lock")
-	var precision := 1.0 / SNIPER_MAGNIFICATION if Input.is_action_pressed("sniper") else 1.0
+	var zoom_scale := 1.0 / SNIPER_MAGNIFICATION if Input.is_action_pressed("sniper") else 1.0
+	var precision := zoom_scale * AIM_SPEED_MULTIPLIER
 	# Perspective magnification scales tan(FOV / 2), rather than the angle itself.
-	camera.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(NORMAL_FOV) / 2.0) * precision))
+	camera.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(NORMAL_FOV) / 2.0) * zoom_scale))
 	rotate_y(-turn_input * TURN_SPEED * delta * precision)
 	var movement := Vector3(stick.x, 0, clampf(forward_input + stick.y, -1.0, 1.0)).limit_length()
 	if aim_lock:
@@ -100,8 +99,9 @@ func _physics_process(delta: float) -> void:
 		rotate_y(-stick.x * STICK_TURN_SPEED * 2.0 * delta * precision)
 		_pitch_camera(-stick.y * STICK_PITCH_SPEED * 2.0 * delta * precision)
 	var direction := global_transform.basis * movement
-	velocity.x = direction.x * WALK_SPEED
-	velocity.z = direction.z * WALK_SPEED
+	var speed := WALK_SPEED * SPRINT_MULTIPLIER if Input.is_action_pressed("sprint") else WALK_SPEED
+	velocity.x = direction.x * speed
+	velocity.z = direction.z * speed
 	move_and_slide()
 	_pitch_camera(Input.get_axis("aim_down", "aim_up") * KEY_AIM_SPEED * delta * precision)
 	_look_with_stick(delta * precision)
@@ -132,6 +132,7 @@ func cancel_charge() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		var precision := 1.0 / SNIPER_MAGNIFICATION if Input.is_action_pressed("sniper") else 1.0
+		precision *= AIM_SPEED_MULTIPLIER
 		rotate_y(-event.relative.x * MOUSE_SENSITIVITY * precision)
 		_mouse_turn = clampf(_mouse_turn - event.relative.x * MOUSE_TURN_SCALE, -1.0, 1.0)
 		_pitch_camera(-event.relative.y * MOUSE_SENSITIVITY * precision)
@@ -177,7 +178,7 @@ func _set_third_person(enabled: bool) -> void:
 func _lean_body(strafe_input: float, delta: float) -> void:
 	_mouse_turn = move_toward(_mouse_turn, 0.0, delta * 2.0)
 	var turn := clampf(-strafe_input + _mouse_turn, -1.0, 1.0)
-	var target := turn * LEAN_ANGLE + _flip_turn
+	var target := turn * LEAN_ANGLE
 	body.rotation.y = lerp_angle(body.rotation.y, target, clampf(LEAN_SPEED * delta, 0.0, 1.0))
 
 
@@ -185,18 +186,4 @@ func _lean_body(strafe_input: float, delta: float) -> void:
 func _update_mouth(delta: float) -> void:
 	_fire_timer = maxf(_fire_timer - delta, 0.0)
 	_mouth_timer = maxf(_mouth_timer - delta, 0.0)
-	model.set_mouth_open(maxf(_mouth_timer / MOUTH_FIRE_TIME, _greet_mouth))
-
-
-## Called when the bottom button (or E) is pressed with no signpost nearby. Each press turns the
-## character half a circle, so it ends up facing the camera (and turns back on the next press).
-## The mouth opens wide, then snaps shut with a chomp sound.
-func chomp_greeting() -> void:
-	_flipped = not _flipped
-	var turn_tween := create_tween()
-	turn_tween.tween_property(self, "_flip_turn", PI if _flipped else 0.0, GREET_TURN_TIME)
-	var mouth_tween := create_tween()
-	mouth_tween.tween_property(self, "_greet_mouth", 1.0, 0.2)
-	mouth_tween.tween_interval(0.1)
-	mouth_tween.tween_property(self, "_greet_mouth", 0.0, 0.06)
-	mouth_tween.tween_callback(Game.play_sfx.bind("chomp"))
+	model.set_mouth_open(_mouth_timer / MOUTH_FIRE_TIME)

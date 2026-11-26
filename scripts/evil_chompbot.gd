@@ -31,6 +31,8 @@ var _model: Node3D
 var _target := Vector2.ZERO
 var _pause_left := 0.0
 var _fire_cooldown := 0.0
+var _fire_interval: float
+var _engagement_range: float
 var _strafe_direction := 1.0
 var _player: Node3D
 var _dead := false
@@ -51,7 +53,11 @@ func _ready() -> void:
 	monitoring = false
 	monitorable = true
 	_build_visuals()
-	_fire_cooldown = _rng.randf_range(0.7, FIRE_COOLDOWN)
+	var difficulty := Game.difficulty_multiplier()
+	health = Game.scaled_enemy_health(MAX_HEALTH, difficulty)
+	_engagement_range = FIRE_RANGE * difficulty
+	_fire_interval = FIRE_COOLDOWN / difficulty
+	_fire_cooldown = _rng.randf_range(0.7, FIRE_COOLDOWN) / difficulty
 	_pause_left = _rng.randf_range(0.0, PAUSE_MAX)
 	_place_on_ground(Vector2(_home.x, _home.z))
 	_pick_target()
@@ -64,7 +70,7 @@ func _process(delta: float) -> void:
 		_player = get_tree().get_first_node_in_group("player") as Node3D
 	_fire_cooldown = maxf(_fire_cooldown - delta, 0.0)
 
-	if _player != null and _distance_to_player() < FIRE_RANGE:
+	if _player != null and _distance_to_player() < _engagement_range:
 		_strafe(delta)
 		var player_point := Vector3(_player.global_position.x, position.y, _player.global_position.z)
 		_face(player_point)
@@ -147,7 +153,7 @@ func _face(point: Vector3) -> void:
 
 ## Fires one red laser from the mouth towards the player's chest.
 func _shoot() -> void:
-	_fire_cooldown = FIRE_COOLDOWN
+	_fire_cooldown = _fire_interval
 	var origin := global_position + Vector3(0, 0.3, 0)
 	var aim := _player.global_position + Vector3(0, 1.0, 0) - origin
 	fired.emit(origin, aim.normalized())

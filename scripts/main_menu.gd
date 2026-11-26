@@ -16,6 +16,7 @@ var _cards := {}  # character id -> card data (panel, button, pivot, model, colo
 var _status_label: Label
 var _start_button: Button
 var _music_button: Button
+var _difficulty_button: Button
 var _time := 0.0
 
 
@@ -83,15 +84,20 @@ func _build_layout() -> void:
 	_music_button.name = "Music"
 	buttons.add_child(_music_button)
 	_update_music_button()
+	_difficulty_button = _button("", Vector2(230, 64), IDLE_BORDER)
+	_difficulty_button.name = "Difficulty"
+	_difficulty_button.pressed.connect(_on_difficulty_pressed)
+	buttons.add_child(_difficulty_button)
+	_update_difficulty_button()
 	var quit := _button("Quit", Vector2(200, 64), IDLE_BORDER)
 	quit.pressed.connect(get_tree().quit)
 	buttons.add_child(quit)
 
 	_status_label = _label("", 22, Color.WHITE)
 	column.add_child(_status_label)
-	column.add_child(_label("W / S move  |  A / D turn  |  Hold Space charge, release fire  |  Up/Down aim  |  Shift jump  |  Right-drag look  |  E read sign  |  Esc pause",
+	column.add_child(_label("W / S move  |  A / D turn  |  Hold Space charge, release fire  |  Up/Down aim  |  Shift jump  |  Ctrl sprint  |  Right-drag look  |  E read sign  |  Esc pause",
 			18, Color(0.7, 0.68, 0.82)))
-	column.add_child(_label("Controller: left stick move/strafe  |  right stick aim/turn  |  L2 lock aim  |  R2 5x zoom  |  R1 / RB fire  |  right button jump  |  bottom button read sign  |  left button view  |  Start pause",
+	column.add_child(_label("Controller: left stick move/strafe  |  right stick aim/turn  |  L2 lock aim  |  R2 5x zoom  |  R1 / RB fire  |  right button jump  |  bottom button sprint/read sign  |  left button view  |  Start pause",
 			18, Color(0.7, 0.68, 0.82)))
 
 
@@ -200,6 +206,7 @@ func _load_logo() -> Texture2D:
 
 
 func _on_start_pressed() -> void:
+	Game.reset_run()
 	get_tree().change_scene_to_file("res://scenes/MainGame.tscn")
 
 
@@ -210,6 +217,15 @@ func _on_music_pressed() -> void:
 
 func _update_music_button() -> void:
 	_music_button.text = "Music: " + Game.music_name()
+
+
+func _on_difficulty_pressed() -> void:
+	Game.selected_difficulty = (Game.selected_difficulty + 1) % Game.DIFFICULTIES.size()
+	_update_difficulty_button()
+
+
+func _update_difficulty_button() -> void:
+	_difficulty_button.text = "Difficulty: " + Game.DIFFICULTIES[Game.selected_difficulty]
 
 
 func _label(text: String, size: int, color: Color, semibold := false) -> Label:

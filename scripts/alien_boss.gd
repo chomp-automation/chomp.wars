@@ -10,6 +10,7 @@ const FIRE_COOLDOWN := 1.35
 const WOUNDED_FIRE_COOLDOWN := 0.85
 const BURST_INTERVAL := 0.18
 var health := MAX_HEALTH
+var max_health := MAX_HEALTH
 var enemy_name := "Alien Overlord"
 var _attack_index := 0
 var _burst_remaining := 0
@@ -20,6 +21,7 @@ var _strafe_time := 0.0
 var _portal := Vector3.ZERO
 var _environment: Node
 var _health_label: Label3D
+var _difficulty: float
 
 
 func _ready() -> void:
@@ -28,6 +30,9 @@ func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 0
 	monitoring = false
+	_difficulty = Game.difficulty_multiplier()
+	max_health = Game.scaled_enemy_health(MAX_HEALTH, _difficulty)
+	health = max_health
 	_portal = position
 	_environment = get_tree().get_first_node_in_group("environment")
 	# Oversized green head, black almond eyes, torso, long arms and legs.
@@ -73,11 +78,12 @@ func _process(delta: float) -> void:
 		if _burst_timer <= 0:
 			_fire_aimed(player.global_position + Vector3.UP)
 			_burst_remaining -= 1
-			_burst_timer = BURST_INTERVAL
+			_burst_timer = BURST_INTERVAL / _difficulty
 	_cooldown -= delta
 	if _emergence >= 2.0 and _cooldown <= 0:
 		attack(player.global_position + Vector3.UP)
-		_cooldown = WOUNDED_FIRE_COOLDOWN if health <= MAX_HEALTH / 2 else FIRE_COOLDOWN
+		var interval := WOUNDED_FIRE_COOLDOWN if health <= max_health / 2 else FIRE_COOLDOWN
+		_cooldown = interval / _difficulty
 
 
 func attack(target: Vector3) -> void:
@@ -98,7 +104,7 @@ func attack(target: Vector3) -> void:
 			# Re-aim each shot rather than firing at the player's old position.
 			_fire_aimed(target)
 			_burst_remaining = 3
-			_burst_timer = BURST_INTERVAL
+			_burst_timer = BURST_INTERVAL / _difficulty
 	_attack_index += 1
 
 
@@ -112,7 +118,7 @@ func hit() -> bool:
 		return false
 	health -= 1
 	Game.play_sfx("boss_hit")
-	health_changed.emit(health, MAX_HEALTH)
+	health_changed.emit(health, max_health)
 	_update_health()
 	if health > 0:
 		return false
@@ -123,7 +129,7 @@ func hit() -> bool:
 
 
 func _update_health() -> void:
-	_health_label.text = "ALIEN OVERLORD  %d / %d" % [health, MAX_HEALTH]
+	_health_label.text = "ALIEN OVERLORD  %d / %d" % [health, max_health]
 
 
 func _part(offset: Vector3, size: Vector3, color: Color) -> void:
